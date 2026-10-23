@@ -195,7 +195,7 @@ jobs:
           if (-not $exe) { throw "MouseWithoutBorders.UnitTests.exe not found" }
           $product = (Get-Item (Join-Path $exe.DirectoryName 'PowerToys.MouseWithoutBorders.dll')).VersionInfo.ProductName
           if ($product -ne 'MWB-X9') { throw "The tests ran against a '$product' build, not the standalone build." }
-          & $exe.FullName --filter 'FullyQualifiedName~MatrixPacket|FullyQualifiedName~PeerAddress|FullyQualifiedName~Name2IpMap'
+          & $exe.FullName --filter 'FullyQualifiedName~MatrixPacket|FullyQualifiedName~MatrixLayout|FullyQualifiedName~PeerAddress|FullyQualifiedName~Name2IpMap|FullyQualifiedName~SettingsAddress|FullyQualifiedName~SocketJoin'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Windows PowerShell 5.1, as on the laptops. The runner is elevated.

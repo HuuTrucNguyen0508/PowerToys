@@ -54,4 +54,5 @@ internal enum PackageType // : int
     Matrix = 128,
     MatrixSwapFlag = 2,
     MatrixTwoRowFlag = 4,
+    MatrixJoinFlag = 8,
 }

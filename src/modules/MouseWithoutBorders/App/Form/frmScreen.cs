@@ -554,11 +554,7 @@ namespace MouseWithoutBorders
                     {
                         Logger.LogStatistics();
 
-                        string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
-                        if (MatrixLayout.PlaceInFirstEmptySlot(matrix, Common.MachineName))
-                        {
-                            MachineStuff.MachineMatrix = matrix;
-                        }
+                        _ = MachineStuff.EnsureMachineInMatrix(Common.MachineName);
 
                         if (count % 600 == 0 && Common.Sk != null)
                         {

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation
+﻿// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -524,21 +524,10 @@ internal static class MachineStuff
             MachineStuff.UpdateMachinePoolStringSetting();
         }
 
-        // NOTE(yuyoyuppe): automatically active "bidirectional" control between the machines.
-        // A new machine goes into the first empty slot; the rest of the layout is left as the user arranged it.
-        // Its connection to us is already trusted, so the layout reaches it on that socket, and UpdateClientSockets
-        // below opens our client socket to it. Upstream reopened every socket here, which dropped all machines on each join.
-        if (package.Src != ID.NONE && package.Src != ID.ALL && !InMachineMatrix(name))
+        if (package.Src != ID.NONE && package.Src != ID.ALL)
         {
-            string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
-
-            bool changed = MatrixLayout.PlaceInFirstEmptySlot(matrix, Common.MachineName);
-            changed |= MatrixLayout.PlaceInFirstEmptySlot(matrix, name);
-            if (changed)
-            {
-                MachineStuff.MachineMatrix = matrix;
-                MachineStuff.SendMachineMatrix();
-            }
+            _ = EnsureMachineInMatrix(name);
+            SendMachineMatrix(true);
         }
 
         Logger.LogDebug("Machine added: " + name + "/" + package.Src.ToString());
@@ -574,12 +563,13 @@ internal static class MachineStuff
         }
 
         machineName = machineName.Trim();
-        string[] matrix = (string[])MachineMatrix.Clone();
-
-        if (MatrixLayout.ReplaceName(matrix, typedAddress, machineName))
+        lock (StagedMatrixLock)
         {
-            MachineMatrix = matrix;
-            Logger.Log($"{typedAddress} is {machineName}: layout updated to [{string.Join(",", matrix)}].");
+            string[] matrix = (string[])MachineMatrix.Clone();
+            if (MatrixLayout.ReplaceName(matrix, typedAddress, machineName))
+            {
+                MachineMatrix = matrix;
+            }
         }
 
         if (MachinePool.LearnMachine(machineName))
@@ -588,6 +578,22 @@ internal static class MachineStuff
         }
 
         _ = LearnAddresses(new[] { (machineName, address) });
+    }
+
+    internal static bool EnsureMachineInMatrix(string name)
+    {
+        lock (StagedMatrixLock)
+        {
+            string[] matrix = (string[])MachineMatrix.Clone();
+            bool changed = MatrixLayout.PlaceInFirstEmptySlot(matrix, Common.MachineName);
+            changed |= MatrixLayout.PlaceInFirstEmptySlot(matrix, name);
+            if (changed)
+            {
+                MachineMatrix = matrix;
+            }
+
+            return changed;
+        }
     }
 
     internal static void UpdateClientSockets(string logHeader)
@@ -751,7 +757,9 @@ internal static class MachineStuff
 
     private static readonly Lock SendMatrixLock = new();
 
-    internal static void SendMachineMatrix()
+    internal static void SendMachineMatrix() => SendMachineMatrix(false);
+
+    private static void SendMachineMatrix(bool joining)
     {
         lock (SendMatrixLock)
         {
@@ -763,6 +771,7 @@ internal static class MachineStuff
             DATA package = new()
             {
                 Type = PackageType.Matrix
+                    | (joining ? PackageType.MatrixJoinFlag : 0)
                     | (Setting.Values.MatrixCircle ? PackageType.MatrixSwapFlag : 0)
                     | (Setting.Values.MatrixOneRow ? 0 : PackageType.MatrixTwoRowFlag),
             };
@@ -803,6 +812,7 @@ internal static class MachineStuff
             Logger.Log($"Ignoring machine Matrix package with {slotCount} slots (0 = official build); this build has {MAX_MACHINE}.");
         }
 
+        bool sendMerged = false;
         lock (StagedMatrixLock)
         {
             if (!tcp.MatrixBuffer.TryAdd((int)i, slotCount, (int)package.Type, matrixIncludedMachine, package.MatrixSlotIPv4, out string[] received, out uint[] addresses))
@@ -824,31 +834,54 @@ internal static class MachineStuff
             bool oneRow = (package.Type & PackageType.MatrixTwoRowFlag) == 0;
             received = MatrixLayout.Normalize(received, MAX_MACHINE, false, MATRIX_COLUMNS);
             string[] current = MachineMatrix;
-            if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(current))
+            bool joining = (package.Type & PackageType.MatrixJoinFlag) != 0;
+            if (joining)
+            {
+                for (int slot = 0; slot < received.Length; slot++)
+                {
+                    if (PeerAddress.TryParseLiteral(received[slot], out _)
+                        || (!current.Contains(received[slot], StringComparer.OrdinalIgnoreCase)
+                            && PeerAddress.FromPacketValue(addresses[slot]) == null
+                            && !string.Equals(received[slot], tcp.MachineName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        received[slot] = string.Empty;
+                    }
+                }
+
+                if (!MatrixLayout.TryMergeJoin(current, received, out string[] merged))
+                {
+                    return;
+                }
+
+                sendMerged = !merged.SequenceEqual(received, StringComparer.OrdinalIgnoreCase);
+                received = merged;
+            }
+
+            if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(current, StringComparer.OrdinalIgnoreCase))
             {
                 // Same layout, but new addresses may reach machines we couldn't connect to.
-                if (!addressesChanged)
+                if (!addressesChanged && !sendMerged)
                 {
                     return;
                 }
             }
             else
             {
-                ApplyReceivedMatrix(current, received, circle, oneRow);
+                ApplyReceivedMatrix(received, circle, oneRow);
             }
+        }
+
+        if (sendMerged)
+        {
+            SendMachineMatrix(true);
         }
 
         UpdateClientSockets("UpdateMachineMatrix");
     }
 
-    private static void ApplyReceivedMatrix(string[] current, string[] received, bool circle, bool oneRow)
+    private static void ApplyReceivedMatrix(string[] received, bool circle, bool oneRow)
     {
-        // A join only fills empty slots. Don't arm the one-time full reconnect for it: a duplicate socket that a
-        // peer closes during the join would otherwise reopen every connection on this machine.
-        if (!MatrixLayout.OnlyFillsEmptySlots(current, received))
-        {
-            InitAndCleanup.ReopenSocketDueToReadError = true;
-        }
+        InitAndCleanup.ReopenSocketDueToReadError = true;
 
         Setting.Values.MatrixCircle = circle;
         Setting.Values.MatrixOneRow = oneRow;

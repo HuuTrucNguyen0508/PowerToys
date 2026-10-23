@@ -3,6 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 // <summary>
 //     Machine matrix shape and migration helpers. Pure functions: no settings, sockets or UI.
@@ -168,27 +170,44 @@ internal static class MatrixLayout
         return changed;
     }
 
-    /// <summary>
-    /// True if <paramref name="next"/> keeps every machine of <paramref name="current"/> in the same slot and only fills empty slots,
-    /// which is what a machine joining the layout looks like.
-    /// </summary>
-    internal static bool OnlyFillsEmptySlots(string[] current, string[] next)
+    internal static bool TryMergeJoin(string[] current, string[] incoming, out string[] merged)
     {
-        ArgumentNullException.ThrowIfNull(current);
-        ArgumentNullException.ThrowIfNull(next);
+        Dictionary<string, int> preferredSlots = new(StringComparer.Ordinal);
+        foreach (string[] layout in new[] { current, incoming })
+        {
+            for (int i = 0; i < layout.Length; i++)
+            {
+                string name = layout[i]?.Trim().ToUpperInvariant();
+                if (!string.IsNullOrEmpty(name) && !PeerAddress.TryParseLiteral(name, out _))
+                {
+                    preferredSlots[name] = preferredSlots.TryGetValue(name, out int previous) ? Math.Min(previous, i) : i;
+                }
+            }
+        }
 
-        if (current.Length != next.Length)
+        merged = null;
+        if (current.Length != incoming.Length || preferredSlots.Count > current.Length)
         {
             return false;
         }
 
-        for (int i = 0; i < current.Length; i++)
+        merged = CreateEmpty(current.Length);
+        List<string> displaced = new();
+        foreach (var pair in preferredSlots.OrderBy(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal))
         {
-            string name = current[i]?.Trim() ?? string.Empty;
-            if (name.Length > 0 && !name.Equals(next[i]?.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (merged[pair.Value].Length == 0)
             {
-                return false;
+                merged[pair.Value] = pair.Key;
             }
+            else
+            {
+                displaced.Add(pair.Key);
+            }
+        }
+
+        foreach (string name in displaced)
+        {
+            _ = PlaceInFirstEmptySlot(merged, name);
         }
 
         return true;

@@ -285,21 +285,87 @@ public sealed class MatrixLayoutTests
     }
 
     [TestMethod]
-    public void FillingEmptySlotsIsAJoin()
+    public void ConcurrentJoinsMergeWithoutDroppingEitherMachine()
     {
-        string[] current = ["A", "B", string.Empty, string.Empty];
-        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, ["a ", "B", "C", string.Empty]));
-        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "B", string.Empty, "C"]));
-        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, current));
+        string[] first = ["A", "B", "C", string.Empty, string.Empty];
+        string[] second = ["A", "B", "D", string.Empty, string.Empty];
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(first, second, out string[] merged));
+        string[] expected = ["A", "B", "C", "D", string.Empty];
+        CollectionAssert.AreEqual(expected, merged);
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(second, first, out string[] reverse));
+        CollectionAssert.AreEqual(merged, reverse);
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(merged, merged, out string[] repeated));
+        CollectionAssert.AreEqual(merged, repeated);
     }
 
     [TestMethod]
-    public void MovingRemovingOrResizingIsNotAJoin()
+    public void JoinCollisionsKeepUncontestedSlotsAndCanonicalizeNames()
     {
-        string[] current = ["A", "B", string.Empty, string.Empty];
-        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["B", "A", string.Empty, string.Empty]));
-        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", string.Empty, string.Empty, string.Empty]));
-        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "C", string.Empty, string.Empty]));
-        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "B", string.Empty]));
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(["b", "C", string.Empty, string.Empty], ["A", "c", string.Empty, string.Empty], out string[] merged));
+        string[] expected = ["A", "C", "B", string.Empty];
+        CollectionAssert.AreEqual(expected, merged);
+    }
+
+    [TestMethod]
+    public void JoinMergeNeverPropagatesTypedAddresses()
+    {
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(["A", "10.0.0.1", string.Empty], ["A", "B", string.Empty], out string[] merged));
+        string[] expected = ["A", "B", string.Empty];
+        CollectionAssert.AreEqual(expected, merged);
+    }
+
+    [TestMethod]
+    public void OverCapacityJoinDoesNotReturnAPartialLayout()
+    {
+        Assert.IsFalse(MatrixLayout.TryMergeJoin(["A", "B"], ["A", "C"], out string[] merged));
+        Assert.IsNull(merged);
+    }
+
+    [DataTestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    [DataRow(3)]
+    [DataRow(4)]
+    [DataRow(5)]
+    public void ThreeSimultaneousJoinBroadcastsConverge(int ordering)
+    {
+        int[][] orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+        string[][] hosts = [MatrixLayout.Create(9, "A", "B", "C"), MatrixLayout.Create(9, "A", "B", "D"), MatrixLayout.Create(9, "A", "B", "E")];
+        var packets = new Queue<(int Receiver, string[] Layout)>();
+        foreach (int sender in orders[ordering])
+        {
+            for (int receiver = 0; receiver < hosts.Length; receiver++)
+            {
+                if (receiver != sender)
+                {
+                    packets.Enqueue((receiver, hosts[sender]));
+                }
+            }
+        }
+
+        int deliveries = 0;
+        while (packets.TryDequeue(out var packet))
+        {
+            Assert.IsTrue(++deliveries < 100, "Join broadcasts must settle.");
+            Assert.IsTrue(MatrixLayout.TryMergeJoin(hosts[packet.Receiver], packet.Layout, out string[] merged));
+            hosts[packet.Receiver] = merged;
+            if (!merged.SequenceEqual(packet.Layout, StringComparer.OrdinalIgnoreCase))
+            {
+                for (int receiver = 0; receiver < hosts.Length; receiver++)
+                {
+                    if (receiver != packet.Receiver)
+                    {
+                        packets.Enqueue((receiver, merged));
+                    }
+                }
+            }
+        }
+
+        foreach (string[] host in hosts)
+        {
+            CollectionAssert.AreEqual(hosts[0], host);
+            CollectionAssert.AreEquivalent(MatrixLayout.Create(9, "A", "B", "C", "D", "E"), host);
+        }
     }
 }
