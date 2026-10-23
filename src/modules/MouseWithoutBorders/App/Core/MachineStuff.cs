@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -857,63 +857,13 @@ internal static class MachineStuff
         Setting.Values.Changed = true;
     }
 
-    private static readonly Lock LearnedAddressesLock = new();
-    private static string learnedAddresses = string.Empty;
+    internal static string LearnedAddresses => Setting.Values.LearnedAddresses;
 
-    // Learned Name2IP lines. They are also written to Name2IP when policy allows, but this copy keeps working when policy
-    // blocks Name2IP or a settings window writes back an older Name2IP.
-    internal static string LearnedAddresses
-    {
-        get
-        {
-            lock (LearnedAddressesLock)
-            {
-                return learnedAddresses;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Remembers the addresses machines were reached at, so the next connection works without DNS.
-    /// Skips this machine, blank names and unknown addresses. Returns true if anything new was learned.
-    /// </summary>
     internal static bool LearnAddresses(IEnumerable<(string Name, IPAddress Address)> found)
     {
-        lock (LearnedAddressesLock)
-        {
-            string learned = learnedAddresses;
-            string saved = Setting.Values.Name2IpIsGpoConfigured ? null : Setting.Values.Name2IP ?? string.Empty;
-            string updated = saved;
-
-            foreach ((string name, IPAddress address) in found)
-            {
-                if (address == null || string.IsNullOrWhiteSpace(name) || PeerAddress.TryParseLiteral(name, out _)
-                    || name.Trim().Equals(Common.MachineName.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                learned = Name2IpMap.SetLearned(learned, name, address);
-                updated = updated == null ? null : Name2IpMap.SetLearned(updated, name, address);
-            }
-
-            bool changed = !learned.Equals(learnedAddresses, StringComparison.Ordinal);
-            learnedAddresses = learned;
-
-            if (updated != null && !updated.Equals(saved, StringComparison.Ordinal))
-            {
-                Logger.Log($"Learned machine addresses:\r\n{learned}");
-                Setting.Values.Name2IP = updated;
-
-                // Name2IP has no instant save of its own.
-                if (!Setting.Values.PauseInstantSaving)
-                {
-                    Setting.Values.SaveSettings();
-                }
-            }
-
-            return changed;
-        }
+        return Setting.Values.LearnAddresses(found.Where(peer => peer.Address != null
+            && !string.IsNullOrWhiteSpace(peer.Name) && !PeerAddress.TryParseLiteral(peer.Name, out _)
+            && !peer.Name.Trim().Equals(Common.MachineName.Trim(), StringComparison.OrdinalIgnoreCase)));
     }
 
     internal static void SwitchToMachine(string name)

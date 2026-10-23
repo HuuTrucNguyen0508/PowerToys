@@ -152,4 +152,20 @@ public sealed class Name2IpMapTests
         CollectionAssert.AreEqual(new[] { First }, Name2IpMap.AddressesFor("PC\t192.168.1.20\t#learned", "PC"));
         Assert.AreEqual("PC 192.168.1.21 #learned", Name2IpMap.SetLearned("PC\t192.168.1.20\t#learned", "PC", Second));
     }
+
+    [TestMethod]
+    public void MergingLearnedAddressesPreservesUserEditsAndRestoresMissingLines()
+    {
+        string learned = "PC 192.168.1.21 #learned\r\nOTHER 10.0.0.3 #learned";
+        string edited = "PC 10.0.0.9\r\n# my edits\r\nPC 192.168.1.20 #learned";
+        string expected = "PC 10.0.0.9\r\n# my edits\r\nPC 192.168.1.21 #learned\r\nOTHER 10.0.0.3 #learned";
+        Assert.AreEqual(expected, Name2IpMap.MergeLearned(edited, learned));
+        Assert.AreEqual(expected, Name2IpMap.MergeLearned(expected, learned));
+    }
+
+    [TestMethod]
+    public void MergeImportsOnlyValidLearnedLines()
+    {
+        Assert.AreEqual("PC 192.168.1.20 #learned", Name2IpMap.MergeLearned(null, "USER 10.0.0.1\r\nBAD nonsense #learned\r\nPC 192.168.1.20 #learned"));
+    }
 }

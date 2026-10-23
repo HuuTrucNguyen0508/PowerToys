@@ -115,6 +115,21 @@ internal static class Name2IpMap
 
     private static string[] Tokens(string line) => line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
 
+    internal static string MergeLearned(string text, string learned)
+    {
+        text ??= string.Empty;
+        foreach (string line in Lines(learned))
+        {
+            string[] tokens = Tokens(line);
+            if (IsLearned(line) && IPAddress.TryParse(tokens[1], out IPAddress address))
+            {
+                text = SetLearned(text, tokens[0], address);
+            }
+        }
+
+        return text;
+    }
+
     private static bool IsLearned(string line)
     {
         string[] tokens = Tokens(line);

@@ -11,6 +11,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -69,6 +70,7 @@ namespace MouseWithoutBorders.Class
 
         private MouseWithoutBordersProperties _properties;
         private MouseWithoutBordersSettings _settings;
+        private string _learnedAddresses = string.Empty;
 
         internal static bool IsProtectedMode
         {
@@ -143,14 +145,25 @@ namespace MouseWithoutBorders.Class
         {
             var last_properties = _properties;
 
-            _settings = settings;
-            _properties = settings.Properties;
+            bool restoredAddresses = false;
+            lock (_loadingSettingsLock)
+            {
+                _settings = settings;
+                _properties = settings.Properties;
+                if (!Name2IpIsGpoConfigured)
+                {
+                    string saved = _properties.Name2IP.Value;
+                    _learnedAddresses = Name2IpMap.MergeLearned(Name2IpMap.MergeLearned(string.Empty, saved), _learnedAddresses);
+                    _properties.Name2IP.Value = Name2IpMap.MergeLearned(saved, _learnedAddresses);
+                    restoredAddresses = !string.Equals(saved, _properties.Name2IP.Value, StringComparison.Ordinal);
+                }
+            }
 
             // Keep track of the need to resend the machine matrix.
             bool shouldSendMachineMatrix = false;
 
             // Keep track of the need to save into the settings file.
-            bool shouldSaveNewSettingsValues = false;
+            bool shouldSaveNewSettingsValues = restoredAddresses;
 
             if (last_properties != null)
             {
@@ -1127,7 +1140,7 @@ namespace MouseWithoutBorders.Class
 
                 lock (_loadingSettingsLock)
                 {
-                    _properties.Name2IP.Value = value;
+                    _properties.Name2IP.Value = Name2IpMap.MergeLearned(value, _learnedAddresses);
                 }
             }
         }
@@ -1135,6 +1148,49 @@ namespace MouseWithoutBorders.Class
         [CmdConfigureIgnore]
         [JsonIgnore]
         internal bool Name2IpIsGpoConfigured => GPOWrapper.GetConfiguredMwbDisableUserDefinedIpMappingRulesValue() == GpoRuleConfigured.Enabled;
+
+        [CmdConfigureIgnore]
+        [JsonIgnore]
+        internal string LearnedAddresses
+        {
+            get
+            {
+                lock (_loadingSettingsLock)
+                {
+                    return _learnedAddresses ?? string.Empty;
+                }
+            }
+        }
+
+        internal bool LearnAddresses(IEnumerable<(string Name, IPAddress Address)> found)
+        {
+            lock (_loadingSettingsLock)
+            {
+                string learned = _learnedAddresses ?? string.Empty;
+                foreach ((string name, IPAddress address) in found)
+                {
+                    learned = Name2IpMap.SetLearned(learned, name, address);
+                }
+
+                bool changed = !learned.Equals(_learnedAddresses ?? string.Empty, StringComparison.Ordinal);
+                _learnedAddresses = learned;
+                if (!Name2IpIsGpoConfigured)
+                {
+                    string saved = _properties.Name2IP.Value;
+                    string updated = Name2IpMap.MergeLearned(saved, learned);
+                    if (!string.Equals(updated, saved, StringComparison.Ordinal))
+                    {
+                        _properties.Name2IP.Value = updated;
+                        if (!PauseInstantSaving)
+                        {
+                            SaveSettings();
+                        }
+                    }
+                }
+
+                return changed;
+            }
+        }
 
         [CmdConfigureIgnore]
         [JsonIgnore]
