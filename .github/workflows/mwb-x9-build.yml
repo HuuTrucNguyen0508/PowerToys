@@ -2,7 +2,8 @@
 # src/modules/MouseWithoutBorders/MWB-X9.md):
 # - build: runs the unit tests and uploads PowerToys.MouseWithoutBorders.dll for a PowerToys install;
 # - standalone: builds the app, service and helper with /p:MwbStandalone=true, packages them with the
-#   install scripts as MWB-X9-<version>-x64.zip, and tests install, start and uninstall on the runner.
+#   install scripts as MWB-X9-<version>-x64.zip, runs the layout packet tests against the standalone
+#   build, and tests install, start and uninstall on the runner.
 name: mwb-x9 build
 
 on:
@@ -175,6 +176,27 @@ jobs:
             if ($product -ne 'MWB-X9') { throw "$dll has product name '$product'." }
             "$dll`: MWBX9.Service, product $product"
           }
+
+      # The package is already built, so this can't add test files to it. Checks that Matrix packets keep the slot
+      # count, the IPv4 field (offset 20) and the name through DATA.Bytes in the standalone build.
+      # A network test of several instances isn't possible here: one instance per session, on fixed ports.
+      - name: Test layout packet fields in the standalone build
+        shell: pwsh
+        run: |
+          msbuild src/modules/MouseWithoutBorders/MouseWithoutBorders.UnitTests/MouseWithoutBorders.UnitTests.csproj `
+            /restore /m /nologo /v:minimal `
+            /p:Platform=x64 /p:Configuration=Release `
+            /p:RestorePackagesConfig=true `
+            /p:MwbStandalone=true `
+            "/p:Version=$env:MWB_VERSION" `
+            /bl:artifacts/logs/standalone-tests.binlog
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-ChildItem -Recurse -Path src/modules/MouseWithoutBorders/MouseWithoutBorders.UnitTests/bin/x64/Release -Filter MouseWithoutBorders.UnitTests.exe | Select-Object -First 1
+          if (-not $exe) { throw "MouseWithoutBorders.UnitTests.exe not found" }
+          $product = (Get-Item (Join-Path $exe.DirectoryName 'PowerToys.MouseWithoutBorders.dll')).VersionInfo.ProductName
+          if ($product -ne 'MWB-X9') { throw "The tests ran against a '$product' build, not the standalone build." }
+          & $exe.FullName --filter 'FullyQualifiedName~MatrixPacket|FullyQualifiedName~PeerAddress|FullyQualifiedName~Name2IpMap'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Windows PowerShell 5.1, as on the laptops. The runner is elevated.
       - name: Test install, start and uninstall

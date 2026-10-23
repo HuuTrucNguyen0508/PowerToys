@@ -34,15 +34,19 @@ Upstream MWB has no 4-machine limit in its network protocol. The limit lives in 
 
   The settings file format doesn't change. `MachineMatrixString` is still a flat, row-major list of names with `""` for an empty slot.
 - **New machines don't reshuffle the layout.** Upstream rebuilt the whole layout in pool order whenever it learned a new machine. The fork puts the new machine in the first empty slot and leaves the rest alone.
+- **Joining no longer reconnects existing machines.** Upstream closed and reopened every connection whenever a machine joined, so the whole grid dropped for a moment. The fork sends the new layout on the connections that are already up and opens only the connections to the new machine.
+- **Pair by name or IP.** In the setup wizard, and in PowerToys Settings, you can enter the other computer's name or its IPv4 or IPv6 address. MWB connects to the address directly. Once the machine there proves the security key, its real name replaces the address in the layout.
+- **IPv4 addresses are shared automatically.** Each layout packet also carries the IPv4 address the sender sees for that slot, so machines can reach each other on a network without name resolution. Every machine also records the address of each machine that connects to it. Learned addresses are added to the IP mappings as `NAME IP #learned` lines. A newer address for the same name replaces the learned line; lines you wrote yourself are never changed. If the `MwbDisableUserDefinedIpMappingRules` policy blocks IP mappings, learned addresses are kept in memory until MWB restarts. IPv6 still needs names or IP mappings: the free bytes in a layout packet only fit an IPv4 address.
 - **Layout broadcasts.** Each layout packet now carries the sender's slot count in bytes that official builds ignore. A fork machine ignores layouts from a sender with a different slot count, including official builds, which send 0. It stages slots separately for each TCP connection and applies a layout only after every slot arrives in order. Concurrent broadcasts from one machine are serialized.
 - **Hotkeys.** Ctrl+Alt+1…9 and Ctrl+Alt+F1…F9 switch to slots 1–9.
 - **Smaller fixes.**
+  - Policy IP mappings (`MwbPolicyDefinedIpMappingRules`) now apply even when the user's IP mappings are empty.
   - Duplicate-packet detection is per sender.
   - A machine never evicts itself from its own pool.
   - A 4-entry machine pool saved by an official build loads instead of being wiped.
 - **Legacy layout editor.** The original MWB settings window shows 3 rows of tiles. In one-row mode it widens to fit 9 tiles, up to the width of the screen.
 
-The new logic is in two dependency-free files, `App/Core/MatrixLayout.cs` and `App/Core/GridNavigator.cs`. Their unit tests are in `MouseWithoutBorders.UnitTests/Core/`.
+The new logic is in dependency-free files: `App/Core/MatrixLayout.cs`, `App/Core/GridNavigator.cs`, `App/Core/MatrixPacketBuffer.cs`, `App/Core/PeerAddress.cs` and `App/Core/Name2IpMap.cs`. Their unit tests are in `MouseWithoutBorders.UnitTests/Core/`.
 
 ## Fleet rule: every machine runs the same fork build
 
@@ -104,7 +108,7 @@ Use the original MWB settings window:
 
 1. In PowerToys Settings → Mouse Without Borders, turn on **Show the original Mouse Without Borders UI**, then restart MWB.
 2. Open the original window from the MWB tray icon.
-3. Make sure **Two Row** is checked to get the 3×3 grid. Drag the tiles to match where the screens physically sit, then select **Apply**. The layout is sent to every connected machine.
+3. Make sure **Grid (3×3)** is checked. Upstream calls this check box **Two Row**. Drag the tiles to match where the screens physically sit, then select **Apply**. The layout is sent to every connected machine.
 
 The official PowerToys Settings page still shows the 9 slots in 2 or 4 columns, not 3×3. That is only how it draws them. Dragging there still swaps slots correctly, but the picture doesn't match the grid. The policy `MwbUseOriginalUserInterface` must not be set to disabled, or the original window is blocked.
 
@@ -141,7 +145,8 @@ Alternatively, run PowerToys repair or reinstall the same official version. The 
   The unit tests cover only the layout and navigation logic.
 - **Holes can be refilled.** A machine missing from its own layout adds itself to the first empty slot and saves the result. It leaves holes alone when it is already placed. Newly discovered peers and the official Settings page can also fill empty slots.
 - **Connection checks on edge hits.** Navigation tests candidates in the selected row or column and stops at the nearest connected machine. Each connection check can send a small test packet.
-- **Name resolution.** Machines find each other by name (DNS) or by the IP mappings in settings. On networks with unreliable DNS, add IP mappings.
+- **Name resolution.** Machines find each other by name (DNS), by the IP mappings in settings, or by the IPv4 addresses they learn from each other. On a network without DNS, pair each new machine by the first machine's IP address. IPv6-only networks still need names or IP mappings.
+- **Validate remote machine IP Address needs DNS.** This option (policy `MwbValidateRemoteIp`) checks DNS-resolved addresses with a reverse lookup, so leave it off on a network without DNS. It is off by default. Typed and learned addresses skip this check, as IP mappings always did. **Same subnet only** (`MwbSameSubnetOnly`, off by default) compares only the first two bytes of IPv4 addresses, so it doesn't block a closed LAN.
 
 ## A 12-machine build
 
