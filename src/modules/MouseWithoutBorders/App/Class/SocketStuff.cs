@@ -903,6 +903,20 @@ namespace MouseWithoutBorders.Class
 
                 Logger.LogDebug("Connecting to: " + machineName);
 
+                // The user typed an IP address. Connect to it directly: Dns.GetHostEntry would do a reverse lookup for it,
+                // which fails or stalls on a closed network.
+                if (PeerAddress.TryParseLiteral(machineName, out IPAddress typedAddress))
+                {
+                    UpdateTcpSockets(dummyTcp, SocketStatus.NA);
+
+                    if (CheckForSameSubNet(new List<IPAddress> { typedAddress }, machineName))
+                    {
+                        StartNewTcpClientThread(machineName, typedAddress);
+                    }
+
+                    return;
+                }
+
                 // Policy mappings, then the user's (which include learned lines), then learned lines kept in memory.
                 string combinedName2ipList = Setting.Values.Name2IpPolicyList + Separator[0] + Setting.Values.Name2IP + Separator[0] + MachineStuff.LearnedAddresses;
 
@@ -1414,6 +1428,12 @@ namespace MouseWithoutBorders.Class
                                         Logger.LogDebug($"DNS.RemoteMachineName({remoteMachine}) <> Claimed.MachineName({claimedMachineName}), using the claimed machine name.");
                                         remoteMachine = claimedMachineName;
                                         currentTcp.MachineName = remoteMachine;
+                                    }
+
+                                    // We connected to an IP address the user typed. Use the name it proved instead.
+                                    if (isClient && PeerAddress.TryParseLiteral(machineName, out IPAddress typedAddress))
+                                    {
+                                        MachineStuff.ReplaceAddressWithName(machineName, remoteMachine, typedAddress);
                                     }
 
                                     // Double check to avoid a redundant client socket.

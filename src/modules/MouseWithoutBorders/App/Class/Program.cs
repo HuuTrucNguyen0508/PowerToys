@@ -362,11 +362,7 @@ namespace MouseWithoutBorders.Class
                     MachineStuff.ClearComputerMatrix();
                     Encryption.MyKey = securityKey;
                     Encryption.MagicNumber = Encryption.Get24BitHash(Encryption.MyKey);
-                    MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, pcName.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim());
-
-                    string[] machines = MachineStuff.MachineMatrix;
-                    MachineStuff.MachinePool.Initialize(machines);
-                    MachineStuff.UpdateMachinePoolStringSetting();
+                    MachineStuff.StartLayoutWith(pcName);
 
                     SocketStuff.InvalidKeyFound = false;
                     InitAndCleanup.ReopenSocketDueToReadError = true;

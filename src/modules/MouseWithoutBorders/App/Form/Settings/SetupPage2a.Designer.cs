@@ -93,7 +93,7 @@ namespace MouseWithoutBorders
             this.label3.Name = "label3";
             this.label3.Size = new System.Drawing.Size(262, 18);
             this.label3.TabIndex = 13;
-            this.label3.Text = "OTHER COMPUTER\'S NAME";
+            this.label3.Text = "OTHER COMPUTER\'S NAME OR IP";
             this.label3.TextAlign = System.Drawing.ContentAlignment.BottomLeft;
             // 
             // LinkButton

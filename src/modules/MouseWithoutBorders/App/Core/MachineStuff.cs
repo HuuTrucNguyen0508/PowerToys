@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -543,6 +544,50 @@ internal static class MachineStuff
         Logger.LogDebug("Machine added: " + name + "/" + package.Src.ToString());
         UpdateClientSockets("AddToMachinePool");
         return name;
+    }
+
+    /// <summary>
+    /// Starts a layout with the machine the user typed, by computer name or IP address, and this machine.
+    /// An address stays in the layout only until the machine there says its name (see <see cref="ReplaceAddressWithName"/>);
+    /// the machine pool never holds it.
+    /// </summary>
+    internal static void StartLayoutWith(string otherMachine)
+    {
+        string other = PeerAddress.TryParseLiteral(otherMachine, out IPAddress address)
+            ? address.ToString()
+            : otherMachine.Trim().ToUpper(CultureInfo.CurrentCulture);
+
+        MachineMatrix = MatrixLayout.Create(MAX_MACHINE, other, Common.MachineName.Trim());
+        MachinePool.Initialize(MachineMatrix.Where(m => !PeerAddress.TryParseLiteral(m, out _)));
+        UpdateMachinePoolStringSetting();
+    }
+
+    /// <summary>
+    /// The machine at an address the user typed has proved its identity with the shared key and claimed <paramref name="machineName"/>.
+    /// Puts that name in the layout and the pool instead of the address, and remembers the address for the next connection.
+    /// </summary>
+    internal static void ReplaceAddressWithName(string typedAddress, string machineName, IPAddress address)
+    {
+        if (string.IsNullOrWhiteSpace(machineName))
+        {
+            return;
+        }
+
+        machineName = machineName.Trim();
+        string[] matrix = (string[])MachineMatrix.Clone();
+
+        if (MatrixLayout.ReplaceName(matrix, typedAddress, machineName))
+        {
+            MachineMatrix = matrix;
+            Logger.Log($"{typedAddress} is {machineName}: layout updated to [{string.Join(",", matrix)}].");
+        }
+
+        if (MachinePool.LearnMachine(machineName))
+        {
+            UpdateMachinePoolStringSetting();
+        }
+
+        _ = LearnAddresses(new[] { (machineName, address) });
     }
 
     internal static void UpdateClientSockets(string logHeader)

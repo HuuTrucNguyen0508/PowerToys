@@ -2,7 +2,6 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System.Globalization;
 using System.Text.RegularExpressions;
 
 using MouseWithoutBorders.Class;
@@ -102,12 +101,8 @@ namespace MouseWithoutBorders
                 SecurityCode = Encryption.MyKey;
             }
 
-            MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, ComputerNameField.Text.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim());
-
-            string[] machines = MachineStuff.MachineMatrix;
-            MachineStuff.MachinePool.Initialize(machines);
-
-            MachineStuff.UpdateMachinePoolStringSetting();
+            // The other computer's name or IP address.
+            MachineStuff.StartLayoutWith(ComputerNameField.Text);
             SendNextPage(new SetupPage3a { ReturnToSettings = !Setting.Values.FirstRun });
         }
 
