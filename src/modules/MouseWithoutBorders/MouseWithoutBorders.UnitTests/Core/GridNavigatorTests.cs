@@ -119,6 +119,30 @@ public sealed class GridNavigatorTests
     }
 
     [TestMethod]
+    public void EligibilityChecksStopAtTheNearestTargetOnTheSelectedAxis()
+    {
+        List<int> checkedSlots = [];
+        int target = GridNavigator.Next(Slots, Columns, 0, MatrixDirection.Down, false, i =>
+        {
+            checkedSlots.Add(i);
+            return i == 6;
+        });
+        Assert.AreEqual(6, target);
+        int[] expected = [3, 6];
+        CollectionAssert.AreEqual(expected, checkedSlots);
+
+        checkedSlots.Clear();
+        target = GridNavigator.Next(Slots, Columns, 0, MatrixDirection.Right, true, i =>
+        {
+            checkedSlots.Add(i);
+            return true;
+        });
+        Assert.AreEqual(1, target);
+        expected = [1];
+        CollectionAssert.AreEqual(expected, checkedSlots);
+    }
+
+    [TestMethod]
     public void SoleMachineHasNoTargetInAnyDirection()
     {
         foreach (MatrixDirection direction in Directions)

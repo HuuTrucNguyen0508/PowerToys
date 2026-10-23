@@ -296,28 +296,24 @@ internal static class MachineStuff
         }
 
         string[] matrix = MachineMatrix;
-        string[] live = LiveMachineMatrix;
         int current = Array.FindIndex(matrix, m => currentMachine.Trim().Equals(m?.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (current < 0 || live.Length != matrix.Length)
+        if (current < 0)
         {
             return;
         }
 
+        ID targetId = ID.NONE;
         int target = GridNavigator.Next(
             matrix.Length,
             MatrixLayout.Columns(matrix.Length, Setting.Values.MatrixOneRow, MATRIX_COLUMNS),
             current,
             direction,
             Setting.Values.MatrixCircle,
-            i => !string.IsNullOrEmpty(live[i]) && IdFromName(live[i]) != ID.NONE);
+            i => !string.IsNullOrEmpty(matrix[i]) && (targetId = IdFromName(matrix[i])) != ID.NONE && Common.IsConnectedTo(targetId));
 
         if (target >= 0)
         {
-            ID newID = IdFromName(live[target]);
-            if (newID != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
+            newDesMachineIdEx = targetId;
         }
     }
 
@@ -515,7 +511,7 @@ internal static class MachineStuff
             else
             {
                 Logger.LogDebug("AddToMachinePool: could not add a new machine: " + name);
-                return "Machine pool is full";
+                return string.Empty;
             }
         }
 
@@ -531,7 +527,9 @@ internal static class MachineStuff
         {
             string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
 
-            if (MatrixLayout.PlaceInFirstEmptySlot(matrix, name))
+            bool changed = MatrixLayout.PlaceInFirstEmptySlot(matrix, Common.MachineName);
+            changed |= MatrixLayout.PlaceInFirstEmptySlot(matrix, name);
+            if (changed)
             {
                 MachineStuff.MachineMatrix = matrix;
                 Common.ReopenSockets(true);
@@ -659,7 +657,7 @@ internal static class MachineStuff
                 if (mcMatrix == null)
                 {
                     string s = Setting.Values.MachineMatrixString;
-                    string[] stored = string.IsNullOrEmpty(s) ? null : s.Split(new char[] { ',' });
+                    string[] stored = string.IsNullOrEmpty(s) ? null : s.Split(',');
 
                     // Migrates legacy or mis-sized layouts in memory only. Saving here could deadlock because this
                     // getter runs under locks; the next MachineMatrix set persists the normalized layout.
@@ -698,118 +696,85 @@ internal static class MachineStuff
         }
     }
 
-    private static string[] LiveMachineMatrix
-    {
-        get
-        {
-            string[] matrix = MachineMatrix;
-            string[] connectedMachines = matrix.Select(m => !string.IsNullOrEmpty(m) && Common.IsConnectedTo(IdFromName(m)) ? m : string.Empty).ToArray();
-            Logger.LogDebug($"Matrix: {string.Join(",", matrix)}, Connected: {string.Join(",", connectedMachines)}");
-
-            return connectedMachines;
-        }
-    }
-
     internal static void UpdateMachinePoolStringSetting()
     {
         Setting.Values.MachinePoolString = MachineStuff.MachinePool.SerializedAsString();
     }
 
+    private static readonly Lock SendMatrixLock = new();
+
     internal static void SendMachineMatrix()
     {
-        if (MachineMatrix == null)
+        lock (SendMatrixLock)
         {
-            return;
-        }
+            if (MachineMatrix == null)
+            {
+                return;
+            }
 
-        DATA package = new();
-        string[] matrix = MachineMatrix;
+            DATA package = new()
+            {
+                Type = PackageType.Matrix
+                    | (Setting.Values.MatrixCircle ? PackageType.MatrixSwapFlag : 0)
+                    | (Setting.Values.MatrixOneRow ? 0 : PackageType.MatrixTwoRowFlag),
+            };
+            string[] matrix = MachineMatrix;
 
-        for (int i = 0; i < matrix.Length; i++)
-        {
-            package.MachineName = matrix[i];
-            package.MatrixSlotCount = matrix.Length;
+            for (int i = 0; i < matrix.Length; i++)
+            {
+                package.MachineName = matrix[i];
+                package.MatrixSlotCount = matrix.Length;
 
-            package.Type = PackageType.Matrix
-                | (Setting.Values.MatrixCircle ? PackageType.MatrixSwapFlag : 0)
-                | (Setting.Values.MatrixOneRow ? 0 : PackageType.MatrixTwoRowFlag);
+                package.Src = (ID)(i + 1);
+                package.Des = ID.ALL;
 
-            package.Src = (ID)(i + 1);
-            package.Des = ID.ALL;
+                Common.SkSend(package, null, false);
 
-            Common.SkSend(package, null, false);
-
-            Logger.LogDebug($"matrixIncludedMachine sent: [{i + 1}]/[{matrix.Length}]:[{matrix[i]}]");
+                Logger.LogDebug($"matrixIncludedMachine sent: [{i + 1}]/[{matrix.Length}]:[{matrix[i]}]");
+            }
         }
     }
 
     private static readonly Lock StagedMatrixLock = new();
-    private static string[] stagedMatrix;
     private static long lastIgnoredMatrixLogTime;
 
-    internal static void UpdateMachineMatrix(DATA package)
+    internal static void UpdateMachineMatrix(DATA package, TcpSk tcp)
     {
         uint i = (uint)package.Src;
         int slotCount = package.MatrixSlotCount;
         string matrixIncludedMachine = package.MachineName;
 
         // Official builds send 4 slots and leave MatrixSlotCount at 0. Applying their layout would overwrite ours.
-        if (slotCount != MAX_MACHINE)
+        if (slotCount != MAX_MACHINE && Common.GetTick() - lastIgnoredMatrixLogTime > 60000)
         {
-            if (Common.GetTick() - lastIgnoredMatrixLogTime > 60000)
-            {
-                lastIgnoredMatrixLogTime = Common.GetTick();
-                Logger.Log($"Ignoring machine Matrix package with {slotCount} slots (0 = official build); this build has {MAX_MACHINE}.");
-            }
-
-            return;
+            lastIgnoredMatrixLogTime = Common.GetTick();
+            Logger.Log($"Ignoring machine Matrix package with {slotCount} slots (0 = official build); this build has {MAX_MACHINE}.");
         }
-
-        if (i is 0 or > MAX_MACHINE)
-        {
-            Logger.LogDebug("Invalid machine Matrix package!");
-            return;
-        }
-
-        Logger.LogDebug($"matrixIncludedMachine: [{i}]:[{matrixIncludedMachine}]");
-
-        string[] received = null;
 
         lock (StagedMatrixLock)
         {
-            if (i == 1)
+            if (!tcp.MatrixBuffer.TryAdd((int)i, slotCount, (int)package.Type, matrixIncludedMachine, out string[] received))
             {
-                stagedMatrix = MatrixLayout.CreateEmpty(MAX_MACHINE);
-            }
-
-            if (stagedMatrix == null)
-            {
-                // Joined mid-stream; wait for the next slot 1.
                 return;
             }
 
-            stagedMatrix[i - 1] = matrixIncludedMachine;
-
-            if (i == MAX_MACHINE)
+            bool circle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
+            bool oneRow = (package.Type & PackageType.MatrixTwoRowFlag) == 0;
+            received = MatrixLayout.Normalize(received, MAX_MACHINE, false, MATRIX_COLUMNS);
+            if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(MachineMatrix))
             {
-                received = stagedMatrix;
-                stagedMatrix = null;
+                return;
             }
-        }
 
-        if (received != null)
-        {
-            Setting.Values.MatrixCircle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
-            Setting.Values.MatrixOneRow = !((package.Type & PackageType.MatrixTwoRowFlag) == PackageType.MatrixTwoRowFlag);
-            MachineMatrix = MatrixLayout.Normalize(received, MAX_MACHINE, false, MATRIX_COLUMNS); // Save
-            Logger.LogDebug($"MachineMatrix received: [{string.Join(",", MachineMatrix)}]");
-
-            InitAndCleanup.ReopenSocketDueToReadError = true;
-
-            UpdateClientSockets("UpdateMachineMatrix");
-
+            Setting.Values.MatrixCircle = circle;
+            Setting.Values.MatrixOneRow = oneRow;
+            MachineMatrix = received;
+            Logger.LogDebug($"MachineMatrix received: [{string.Join(",", received)}]");
             Setting.Values.Changed = true;
         }
+
+        InitAndCleanup.ReopenSocketDueToReadError = true;
+        UpdateClientSockets("UpdateMachineMatrix");
     }
 
     internal static void SwitchToMachine(string name)

@@ -77,6 +77,8 @@ namespace MouseWithoutBorders.Class
             BirthTime = Common.GetTick();
         }
 
+        internal MatrixPacketBuffer MatrixBuffer { get; } = new(MachineStuff.MAX_MACHINE);
+
         public bool IsClient { get; set; }
 
         public Socket BackingSocket { get; set; }

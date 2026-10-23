@@ -20,7 +20,7 @@ Upstream MWB has no 4-machine limit in its network protocol. The limit lives in 
 
   The settings file format doesn't change. `MachineMatrixString` is still a flat, row-major list of names with `""` for an empty slot.
 - **New machines don't reshuffle the layout.** Upstream rebuilt the whole layout in pool order whenever it learned a new machine. The fork puts the new machine in the first empty slot and leaves the rest alone.
-- **Layout broadcasts.** Each layout packet now carries the sender's slot count in bytes that official builds ignore. A fork machine ignores layouts from a sender with a different slot count, including official builds, which send 0. It also stages incoming slots and applies the layout only when the last slot arrives.
+- **Layout broadcasts.** Each layout packet now carries the sender's slot count in bytes that official builds ignore. A fork machine ignores layouts from a sender with a different slot count, including official builds, which send 0. It stages slots separately for each TCP connection and applies a layout only after every slot arrives in order. Concurrent broadcasts from one machine are serialized.
 - **Hotkeys.** Ctrl+Alt+1…9 and Ctrl+Alt+F1…F9 switch to slots 1–9.
 - **Smaller fixes.**
   - Duplicate-packet detection is per sender.
@@ -125,8 +125,8 @@ Alternatively, run PowerToys repair or reinstall the same official version. The 
   - a cold start of all 9 machines at once.
 
   The unit tests cover only the layout and navigation logic.
-- **Holes can be refilled.** Two upstream behaviours that this fork leaves unchanged put a machine into the first empty slot, even if you left that slot empty on purpose. A machine that isn't in its own layout adds itself, and the official Settings page adds newly paired machines.
-- **Connection checks on every edge hit.** Checking which machines are connected sends a small test packet to each one, up to 8 per edge hit with 9 machines.
+- **Holes can be refilled.** A machine missing from its own layout adds itself to the first empty slot and saves the result. It leaves holes alone when it is already placed. Newly discovered peers and the official Settings page can also fill empty slots.
+- **Connection checks on edge hits.** Navigation tests candidates in the selected row or column and stops at the nearest connected machine. Each connection check can send a small test packet.
 - **Name resolution.** Machines find each other by name (DNS) or by the IP mappings in settings. On networks with unreliable DNS, add IP mappings.
 
 ## A 12-machine build

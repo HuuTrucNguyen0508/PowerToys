@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Windows.Forms;
 
 using Microsoft.PowerToys.Telemetry;
@@ -553,13 +554,10 @@ namespace MouseWithoutBorders
                     {
                         Logger.LogStatistics();
 
-                        // Need to review this code on why it is needed (moved from MoveToMyNeighbourIfNeeded(...))
-                        for (int i = 0; i < MachineStuff.MachineMatrix.Length; i++)
+                        string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
+                        if (MatrixLayout.PlaceInFirstEmptySlot(matrix, Common.MachineName))
                         {
-                            if (string.IsNullOrEmpty(MachineStuff.MachineMatrix[i]) && !MachineStuff.InMachineMatrix(Common.MachineName))
-                            {
-                                MachineStuff.MachineMatrix[i] = Common.MachineName;
-                            }
+                            MachineStuff.MachineMatrix = matrix;
                         }
 
                         if (count % 600 == 0 && Common.Sk != null)
@@ -874,26 +872,21 @@ namespace MouseWithoutBorders
         internal void UpdateNotifyIcon()
         {
             string[] x = MachineStuff.MachineMatrix;
-            string iconText;
-            if (x != null && (x[0].Length > 0 || x[1].Length > 0 || x[2].Length > 0 || x[3].Length > 0))
+            if (x != null && Array.Exists(x, name => !string.IsNullOrEmpty(name)))
             {
-                iconText = Setting.Values.MatrixOneRow
-                    ? string.Format(
-                        CultureInfo.CurrentCulture,
-                        "[{0}][{1}][{2}][{3}]",
-                        x[0].Trim(),
-                        x[1].Trim(),
-                        x[2].Trim(),
-                        x[3].Trim())
-                    : string.Format(
-                        CultureInfo.CurrentCulture,
-                        "[{0}][{1}]\r\n[{2}][{3}]",
-                        x[0].Trim(),
-                        x[1].Trim(),
-                        x[2].Trim(),
-                        x[3].Trim());
+                int columns = MatrixLayout.Columns(x.Length, Setting.Values.MatrixOneRow, MachineStuff.MATRIX_COLUMNS);
+                StringBuilder iconText = new();
+                for (int i = 0; i < x.Length; i++)
+                {
+                    if (i > 0 && i % columns == 0)
+                    {
+                        iconText.AppendLine();
+                    }
 
-                SetTrayIconText(iconText);
+                    iconText.Append('[').Append(x[i].Trim()).Append(']');
+                }
+
+                SetTrayIconText(iconText.ToString());
             }
             else
             {

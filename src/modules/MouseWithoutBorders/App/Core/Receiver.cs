@@ -56,7 +56,8 @@ internal static class Receiver
             Logger.Log("Got an unknown package!");
             return false;
         }
-        else if (package.Type is not PackageType.ClipboardText and not PackageType.ClipboardImage
+        else if ((package.Type & PackageType.Matrix) != PackageType.Matrix
+            && package.Type is not PackageType.ClipboardText and not PackageType.ClipboardImage
 
             // BEGIN: These package types are sent by TcpSend which is single direction.
             and not PackageType.Handshake and not PackageType.HandshakeAck)
@@ -394,7 +395,7 @@ internal static class Receiver
                 if ((package.Type & PackageType.Matrix) == PackageType.Matrix)
                 {
                     Package.PackageReceived.Matrix++;
-                    MachineStuff.UpdateMachineMatrix(package);
+                    MachineStuff.UpdateMachineMatrix(package, tcp);
                     break;
                 }
                 else
