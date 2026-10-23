@@ -18,9 +18,9 @@ namespace MouseWithoutBorders.Core;
 internal static class Name2IpMap
 {
     internal const string LearnedTag = "#learned";
+    internal const int MaxLearnedEntries = 36;
 
     private const string LineSeparator = "\r\n";
-    private static readonly char[] Blank = { ' ' };
 
     /// <summary>
     /// Addresses mapped to <paramref name="name"/> (case-insensitive), in line order, without duplicates. Lines that don't parse are skipped.
@@ -36,7 +36,7 @@ internal static class Name2IpMap
 
         foreach (string line in Lines(text))
         {
-            string[] tokens = line.Split(Blank, StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = Tokens(line);
 
             if (tokens.Length >= 2 && tokens[0].Trim().Equals(name.Trim(), StringComparison.OrdinalIgnoreCase)
                 && IPAddress.TryParse(tokens[1].Trim(), out IPAddress address) && !addresses.Contains(address))
@@ -59,7 +59,7 @@ internal static class Name2IpMap
         text ??= string.Empty;
         name = name?.Trim();
 
-        if (string.IsNullOrEmpty(name) || name.Contains(' ', StringComparison.Ordinal) || address == null)
+        if (string.IsNullOrEmpty(name) || Array.Exists(name.ToCharArray(), c => char.IsWhiteSpace(c) || char.IsControl(c)) || address == null)
         {
             return text;
         }
@@ -71,7 +71,7 @@ internal static class Name2IpMap
 
         for (int i = 0; i < lines.Count; i++)
         {
-            string[] tokens = lines[i].Split(Blank, StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = Tokens(lines[i]);
 
             if (tokens.Length < 2 || !tokens[0].Equals(name, StringComparison.OrdinalIgnoreCase))
             {
@@ -100,7 +100,25 @@ internal static class Name2IpMap
             lines.Insert(learnedAt, $"{name} {address} {LearnedTag}");
         }
 
+        int learnedCount = lines.FindAll(IsLearned).Count;
+        for (int i = 0; learnedCount > MaxLearnedEntries && i < lines.Count; i++)
+        {
+            if (IsLearned(lines[i]) && !Tokens(lines[i])[0].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                lines.RemoveAt(i--);
+                learnedCount--;
+            }
+        }
+
         return string.Join(LineSeparator, lines);
+    }
+
+    private static string[] Tokens(string line) => line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+
+    private static bool IsLearned(string line)
+    {
+        string[] tokens = Tokens(line);
+        return tokens.Length >= 3 && tokens[2].Equals(LearnedTag, StringComparison.OrdinalIgnoreCase);
     }
 
     // Accepts LF as well as CRLF line breaks; SetLearned writes CRLF.

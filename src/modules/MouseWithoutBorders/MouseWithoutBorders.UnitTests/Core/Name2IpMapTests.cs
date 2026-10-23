@@ -89,6 +89,10 @@ public sealed class Name2IpMapTests
     [DataRow("")]
     [DataRow("   ")]
     [DataRow("TWO WORDS")]
+    [DataRow("A\tB")]
+    [DataRow("A\nB")]
+    [DataRow("A\rB")]
+    [DataRow("A\u0001B")]
     public void InvalidNamesLeaveTheTextAlone(string name)
     {
         Assert.AreEqual("A 10.0.0.1", Name2IpMap.SetLearned("A 10.0.0.1", name, First));
@@ -125,5 +129,27 @@ public sealed class Name2IpMapTests
         string[] tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         Assert.AreEqual("LAPTOP-2", tokens[0]);
         Assert.AreEqual(First, IPAddress.Parse(tokens[1]));
+    }
+
+    [TestMethod]
+    public void LearnedNamesAreBoundedWithoutRemovingUserLines()
+    {
+        string text = "USER 10.0.0.1\r\n# keep this comment";
+        for (int i = 0; i < 100; i++)
+        {
+            text = Name2IpMap.SetLearned(text, $"PC-{i}", First);
+        }
+
+        Assert.AreEqual(36, text.Split('\n').Count(line => line.Contains("#learned", StringComparison.Ordinal)));
+        StringAssert.StartsWith(text, "USER 10.0.0.1\r\n# keep this comment\r\n");
+        Assert.AreEqual(0, Name2IpMap.AddressesFor(text, "PC-0").Count);
+        CollectionAssert.AreEqual(new[] { First }, Name2IpMap.AddressesFor(text, "PC-99"));
+    }
+
+    [TestMethod]
+    public void MappingTokensCanBeSeparatedByTabs()
+    {
+        CollectionAssert.AreEqual(new[] { First }, Name2IpMap.AddressesFor("PC\t192.168.1.20\t#learned", "PC"));
+        Assert.AreEqual("PC 192.168.1.21 #learned", Name2IpMap.SetLearned("PC\t192.168.1.20\t#learned", "PC", Second));
     }
 }
