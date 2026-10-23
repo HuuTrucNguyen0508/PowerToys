@@ -4,6 +4,20 @@ This fork of PowerToys v0.102.0 raises the Mouse Without Borders (MWB) limit fro
 
 It has not been tested on real hardware yet. Treat it as experimental until the checks in [Before you rely on it](#before-you-rely-on-it) pass.
 
+## Standalone app
+
+You can also run the fork without PowerToys, as one portable folder with install and uninstall scripts. This suits laptops that only need Mouse Without Borders, such as a temporary provisioning setup. The [package README](Standalone/README.md) covers install, pairing, the 3×3 layout, service mode, uninstall and unsigned-file warnings.
+
+- **Get it.** The `standalone` job of `.github/workflows/mwb-x9-build.yml` uploads `MWB-X9-<version>-x64.zip`. To build it yourself, build `App/MouseWithoutBorders.csproj`, `App/Service/MouseWithoutBordersService.csproj` and `App/Helper/MouseWithoutBordersHelper.csproj` with `/p:MwbStandalone=true` in a clean checkout, then run `Standalone/New-MWBX9Package.ps1 -Version <version>`.
+- **What the build switch changes.** `/p:MwbStandalone=true` defines `MWB_STANDALONE` and sets the product name to `MWB-X9`. Without it, the build is the normal PowerToys build.
+  - The original MWB window and setup wizard are always on, unless the `MwbUseOriginalUserInterface` policy disables them. A fresh install opens the wizard.
+  - Settings and logs are in `%LOCALAPPDATA%\Microsoft\PowerToys\MWB-X9`. In service mode, the SYSTEM copies log under `C:\Windows\System32\config\systemprofile\AppData\Local\Microsoft\PowerToys\MWB-X9`.
+  - The service is `MWBX9.Service`. `Install-MWBX9.ps1` registers it the way the PowerToys module registers `PowerToys.MWB.Service`: LocalSystem, demand start, and the same DACL for the user.
+  - The single-instance mutex, event and window title use `MWB-X9`, so the app never mistakes a PowerToys MWB for a second copy of itself.
+  - The app and helper don't wait for `PowerToys.exe`, don't start an ETW trace, and don't open the Settings IPC pipe.
+- **Same rules as the DLL build.** Every machine in a grid runs the same standalone package. Don't mix it with PowerToys machines, and don't run MWB-X9 and PowerToys MWB on the same laptop: they use the same TCP ports.
+- **Not changed.** PowerToys policies under `HKLM\SOFTWARE\Policies\PowerToys` still apply. Telemetry stays off unless PowerToys diagnostic data was turned on for the user. The settings window can't change keyboard shortcuts, so the defaults from `settings.json` apply.
+
 ## What changed and why
 
 Upstream MWB has no 4-machine limit in its network protocol. The limit lives in local code: a `MAX_MACHINE = 4` constant, a hard-coded 2×2 layout, and a few literal `4`s. This fork changes only that code:
