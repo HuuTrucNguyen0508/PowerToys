@@ -523,6 +523,8 @@ internal static class MachineStuff
 
         // NOTE(yuyoyuppe): automatically active "bidirectional" control between the machines.
         // A new machine goes into the first empty slot; the rest of the layout is left as the user arranged it.
+        // Its connection to us is already trusted, so the layout reaches it on that socket, and UpdateClientSockets
+        // below opens our client socket to it. Upstream reopened every socket here, which dropped all machines on each join.
         if (package.Src != ID.NONE && package.Src != ID.ALL && !InMachineMatrix(name))
         {
             string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
@@ -532,7 +534,6 @@ internal static class MachineStuff
             if (changed)
             {
                 MachineStuff.MachineMatrix = matrix;
-                Common.ReopenSockets(true);
                 MachineStuff.SendMachineMatrix();
             }
         }
@@ -761,9 +762,17 @@ internal static class MachineStuff
             bool circle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
             bool oneRow = (package.Type & PackageType.MatrixTwoRowFlag) == 0;
             received = MatrixLayout.Normalize(received, MAX_MACHINE, false, MATRIX_COLUMNS);
-            if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(MachineMatrix))
+            string[] current = MachineMatrix;
+            if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(current))
             {
                 return;
+            }
+
+            // A join only fills empty slots. Don't arm the one-time full reconnect for it: a duplicate socket that a
+            // peer closes during the join would otherwise reopen every connection on this machine.
+            if (!MatrixLayout.OnlyFillsEmptySlots(current, received))
+            {
+                InitAndCleanup.ReopenSocketDueToReadError = true;
             }
 
             Setting.Values.MatrixCircle = circle;
@@ -773,7 +782,6 @@ internal static class MachineStuff
             Setting.Values.Changed = true;
         }
 
-        InitAndCleanup.ReopenSocketDueToReadError = true;
         UpdateClientSockets("UpdateMachineMatrix");
     }
 
