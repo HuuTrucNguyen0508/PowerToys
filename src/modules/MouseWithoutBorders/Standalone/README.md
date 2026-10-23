@@ -76,7 +76,11 @@ Running the script again updates or repairs the install. It also switches modes:
 
 All laptops share the same security code. Each new laptop takes the first free slot in the 3×3 grid. Laptops that are already connected stay connected while another one joins.
 
+Use a plain IP address without a port. IPv4 octets are decimal even when they start with zero. To get concurrent-join convergence, update every laptop to this package. Wait for joining to finish before moving or removing tiles.
+
 The laptops tell each other the IPv4 addresses they see, so a new laptop also reaches the others without DNS. The addresses they learn appear on the **IP Mappings** tab as `NAME IP #learned` lines and are updated when an address changes. Lines you add yourself are never changed. IPv6 addresses aren't shared.
+
+MWB keeps up to 36 learned mappings and preserves them when settings are edited. If a laptop has several network interfaces and a shared address is unreachable, add its reachable LAN address in IP mappings.
 
 Leave **Validate remote machine IP Address** off on a network without DNS: it checks addresses with a reverse DNS lookup.
 
