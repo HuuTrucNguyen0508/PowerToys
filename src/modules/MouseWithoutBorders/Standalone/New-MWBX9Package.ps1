@@ -62,7 +62,9 @@ foreach ($list in $lists) {
     foreach ($line in Get-Content -LiteralPath $list.FullName) {
         $path = $line.Trim()
         if ($path -and $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -and
-            [IO.Path]::GetExtension($path) -ne '.pdb' -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+            [IO.Path]::GetExtension($path) -notin @('.pdb', '.lib', '.exp', '.lastcodeanalysissucceeded') -and
+            [IO.Path]::GetFileName($path) -ne 'backup_restore_settings.json' -and
+            (Test-Path -LiteralPath $path -PathType Leaf)) {
             [void]$files.Add([IO.Path]::GetFullPath($path))
         }
     }
@@ -109,7 +111,7 @@ foreach ($app in 'PowerToys.MouseWithoutBorders', 'PowerToys.MouseWithoutBorders
 }
 
 if ($depsMissing.Count -gt 0) {
-    Write-Warning "These .deps.json assets aren't in ${buildDir}: $($depsMissing -join ', ')"
+    throw "These .deps.json assets aren't in ${buildDir}: $($depsMissing -join ', ')"
 }
 
 foreach ($native in 'PowerToys.GPOWrapper.dll', 'PowerToys.Interop.dll') {
