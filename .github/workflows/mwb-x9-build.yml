@@ -209,7 +209,10 @@ jobs:
           Assert ($svc.PathName.StartsWith("`"$dir\PowerToys.MouseWithoutBordersService.exe`" ")) 'service binPath is the quoted service exe plus a path'
           $sd = (& sc.exe sdshow MWBX9.Service) -join ''
           "SDDL: $sd"
-          Assert ($sd.Contains("(A;;RPWPDTLO;;;$sid)")) 'DACL lets the target user start the service'
+          # sdshow prints well-known SIDs as aliases (the runner's built-in Administrator is LA), so compare parsed ACEs.
+          # RPWPDTLO = SERVICE_START | SERVICE_STOP | SERVICE_PAUSE_CONTINUE | SERVICE_INTERROGATE = 0xF0.
+          $userAces = @((New-Object Security.AccessControl.RawSecurityDescriptor($sd)).DiscretionaryAcl | Where-Object { $_.SecurityIdentifier.Value -eq $sid })
+          Assert ($userAces.Count -eq 1 -and $userAces[0].AceType -eq 'AccessAllowed' -and $userAces[0].AccessMask -eq 0xF0) 'DACL lets the target user start, stop and query the service'
           Assert ($sd.Contains('(A;;CCLCSWLOCRRC;;;IU)')) 'DACL matches generateSecurityDescriptor'
 
           $rule = Get-NetFirewallRule -Name 'MWB-X9'
