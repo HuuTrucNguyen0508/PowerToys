@@ -8,9 +8,13 @@ Build the App, Service and Helper projects with /p:MwbStandalone=true first, in 
 clean checkout (see the standalone job in .github/workflows/mwb-x9-build.yml).
 
 The three projects build into the shared <repo>\<platform>\<configuration> folder.
-This script packages only the files that the builds wrote there, as listed in
-each project's obj\...\*.FileListAbsolute.txt, plus the two native DLLs the apps
-load (PowerToys.GPOWrapper.dll, PowerToys.Interop.dll). Debug symbols are left out.
+This script packages only the files the three apps need from there:
+- every runtime, native and resource file that the apps' .deps.json files list,
+  which covers the .NET runtime, NuGet packages and project references;
+- the files the builds recorded in obj\...\*.FileListAbsolute.txt, such as the
+  apphost exe, .runtimeconfig.json and manifests;
+- the two native DLLs the apps load, PowerToys.GPOWrapper.dll and PowerToys.Interop.dll.
+Debug symbols are left out.
 
 The package folder holds bin\ (the app), the install scripts, README.md,
 BUILDINFO.txt and SHA256SUMS.txt. The zip contains that folder, and
@@ -62,6 +66,50 @@ foreach ($list in $lists) {
             [void]$files.Add([IO.Path]::GetFullPath($path))
         }
     }
+}
+
+# Everything the apps load, from the asset lists in their .deps.json files. Self-contained builds copy
+# the .NET runtime into the output folder without recording it in FileListAbsolute.txt.
+$depsMissing = New-Object 'System.Collections.Generic.SortedSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+foreach ($app in 'PowerToys.MouseWithoutBorders', 'PowerToys.MouseWithoutBordersService', 'PowerToys.MouseWithoutBordersHelper') {
+    $depsFile = Join-Path $buildDir "$app.deps.json"
+    if (-not (Test-Path -LiteralPath $depsFile)) {
+        throw "$depsFile is missing. Build the $app project with /p:MwbStandalone=true first."
+    }
+
+    foreach ($appFile in "$app.exe", "$app.dll", "$app.deps.json", "$app.runtimeconfig.json") {
+        [void]$files.Add((Join-Path $buildDir $appFile))
+    }
+
+    $deps = Get-Content -LiteralPath $depsFile -Raw | ConvertFrom-Json
+    foreach ($target in $deps.targets.PSObject.Properties) {
+        foreach ($library in $target.Value.PSObject.Properties) {
+            $relativePaths = @()
+            foreach ($kind in 'runtime', 'native') {
+                if ($library.Value.PSObject.Properties[$kind]) {
+                    $relativePaths += @($library.Value.$kind.PSObject.Properties | ForEach-Object { Split-Path -Leaf $_.Name })
+                }
+            }
+
+            if ($library.Value.PSObject.Properties['resources']) {
+                $relativePaths += @($library.Value.resources.PSObject.Properties | ForEach-Object { Join-Path $_.Value.locale (Split-Path -Leaf $_.Name) })
+            }
+
+            foreach ($relativePath in $relativePaths) {
+                $path = Join-Path $buildDir $relativePath
+                if (Test-Path -LiteralPath $path -PathType Leaf) {
+                    [void]$files.Add($path)
+                }
+                else {
+                    [void]$depsMissing.Add($relativePath)
+                }
+            }
+        }
+    }
+}
+
+if ($depsMissing.Count -gt 0) {
+    Write-Warning "These .deps.json assets aren't in ${buildDir}: $($depsMissing -join ', ')"
 }
 
 foreach ($native in 'PowerToys.GPOWrapper.dll', 'PowerToys.Interop.dll') {
