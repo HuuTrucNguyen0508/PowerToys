@@ -323,6 +323,26 @@ public sealed class MatrixLayoutTests
         Assert.IsNull(merged);
     }
 
+    [TestMethod]
+    public void FullGridPrioritizesAuthenticatedNamesOverPendingAddresses()
+    {
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(["A", "10.0.0.2"], ["A", "B"], out string[] merged));
+        string[] expected = ["A", "B"];
+        CollectionAssert.AreEqual(expected, merged);
+    }
+
+    [TestMethod]
+    public void ExplicitLayoutKeepsTheReceiversPendingTargetsInFreeSlots()
+    {
+        string[] current = ["A", "10.0.0.2", string.Empty];
+        string[] received = ["A", "C", string.Empty];
+        string[] expected = ["A", "C", "10.0.0.2"];
+        var applied = MatrixLayout.WithPendingAddresses(current, received);
+        CollectionAssert.AreEqual(expected, applied);
+        CollectionAssert.AreEqual(applied, MatrixLayout.WithPendingAddresses(applied, received));
+        CollectionAssert.AreEqual(received, MatrixLayout.WithoutAddresses(applied));
+    }
+
     [DataTestMethod]
     [DataRow(0)]
     [DataRow(1)]

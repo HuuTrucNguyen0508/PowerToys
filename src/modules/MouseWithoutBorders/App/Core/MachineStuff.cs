@@ -856,6 +856,10 @@ internal static class MachineStuff
                 sendMerged = !MatrixLayout.WithoutAddresses(merged).SequenceEqual(received, StringComparer.OrdinalIgnoreCase);
                 received = merged;
             }
+            else
+            {
+                received = MatrixLayout.WithPendingAddresses(current, MatrixLayout.WithoutAddresses(received));
+            }
 
             if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(current, StringComparer.OrdinalIgnoreCase))
             {
