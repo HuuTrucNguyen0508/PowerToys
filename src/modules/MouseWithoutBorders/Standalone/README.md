@@ -8,7 +8,7 @@ This build is experimental and has not been tested on real hardware yet. Try it 
 
 - **Every machine runs this same build.** Use the same package version on all laptops. Official PowerToys builds and other fork builds can't join an MWB-X9 grid.
 - **One Mouse Without Borders per laptop.** If PowerToys is installed, turn its Mouse Without Borders off. Both use TCP ports 15100–15101.
-- **Same network.** The laptops must be on one local subnet, and they find each other by computer name. If name lookup is unreliable, add IP mappings on the **IP Mappings** tab of the settings window.
+- **Same network.** The laptops must be on one local subnet. They find each other by computer name, or by IPv4 addresses they share with each other, so a closed network without DNS works. On an IPv6-only network, add IP mappings on the **IP Mappings** tab of the settings window.
 - **Windows 10 or 11, x64.** You need administrator rights to install.
 
 ### Unsigned files
@@ -72,14 +72,18 @@ Running the script again updates or repairs the install. It also switches modes:
 
 1. On the first laptop, sign in as the user you installed for and start **MWB-X9** from the Start Menu.
 2. The setup wizard opens. At **Have you already installed Mouse without Borders on another computer?**, select **No**. The wizard shows a security code and this computer's name. Leave it open.
-3. On each other laptop, start **MWB-X9**, select **Yes**, and enter the security code and the first laptop's name.
+3. On each other laptop, start **MWB-X9**, select **Yes**, and enter the security code and the first laptop's name or IP address. On a network without DNS, use the IP address. To find it, run `ipconfig` on the first laptop.
 
-All laptops share the same security code. Each new laptop takes the first free slot in the 3×3 grid.
+All laptops share the same security code. Each new laptop takes the first free slot in the 3×3 grid. Laptops that are already connected stay connected while another one joins.
+
+The laptops tell each other the IPv4 addresses they see, so a new laptop also reaches the others without DNS. The addresses they learn appear on the **IP Mappings** tab as `NAME IP #learned` lines and are updated when an address changes. Lines you add yourself are never changed. IPv6 addresses aren't shared.
+
+Leave **Validate remote machine IP Address** off on a network without DNS: it checks addresses with a reverse DNS lookup.
 
 ## Arrange the 3×3 layout
 
 1. Right-click the MWB-X9 tray icon and select **Settings**.
-2. On the **Machine Setup** tab, make sure **Two Row** is selected. That gives the 3×3 grid.
+2. On the **Machine Setup** tab, make sure **Grid (3×3)** is selected.
 3. Drag the tiles to match where the screens sit on the desks. To add a machine that isn't shown, select an empty tile's check box and type the computer name.
 4. Select **Apply**. The layout is sent to every connected laptop.
 
