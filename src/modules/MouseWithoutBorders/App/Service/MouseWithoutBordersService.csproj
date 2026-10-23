@@ -28,6 +28,12 @@
     <NoWarn />
   </PropertyGroup>
 
+  <!-- Standalone app (no PowerToys install): build with /p:MwbStandalone=true. See MWB-X9.md. -->
+  <PropertyGroup Condition="'$(MwbStandalone)' == 'true'">
+    <DefineConstants>$(DefineConstants);MWB_STANDALONE</DefineConstants>
+    <Product>MWB-X9</Product>
+  </PropertyGroup>
+
   <!-- See https://learn.microsoft.com/windows/apps/develop/platform/csharp-winrt/net-projection-from-cppwinrt-component for more info -->
   <PropertyGroup>
     <CsWinRTIncludes>PowerToys.GPOWrapper</CsWinRTIncludes>

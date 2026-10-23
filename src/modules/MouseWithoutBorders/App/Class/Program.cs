@@ -52,7 +52,12 @@ namespace MouseWithoutBorders.Class
 {
     internal static class Program
     {
+        // The standalone app never collides with the service a PowerToys install registers.
+#if MWB_STANDALONE
+        private static readonly string ServiceName = "MWBX9.Service";
+#else
         private static readonly string ServiceName = "PowerToys.MWB.Service";
+#endif
 
         private static readonly string ServiceModeArg = "UseService";
 
@@ -61,10 +66,15 @@ namespace MouseWithoutBorders.Class
         [STAThread]
         private static void Main()
         {
-            ManagedCommon.Logger.InitializeLogger("\\MouseWithoutBorders\\Logs");
+            ManagedCommon.Logger.InitializeLogger("\\" + Settings.ModuleFolderName + "\\Logs");
             Logger.Log(Application.ProductName + " Started!");
 
+            // The standalone app has no PowerToys diagnostics to record into and leaves no etw folder behind.
+#if MWB_STANDALONE
+            ETWTrace etwTrace = null;
+#else
             ETWTrace etwTrace = new ETWTrace();
+#endif
 
             if (PowerToys.GPOWrapper.GPOWrapper.GetConfiguredMouseWithoutBordersEnabledValue() == PowerToys.GPOWrapper.GpoRuleConfigured.Disabled)
             {
@@ -137,7 +147,10 @@ namespace MouseWithoutBorders.Class
                     }
                 }
 
+                // The standalone app must not quit when an unrelated PowerToys.exe exits.
+#if !MWB_STANDALONE
                 ShutdownWithPowerToys.WaitForPowerToysRunner(etwTrace);
+#endif
 
                 if (firstArg != string.Empty)
                 {
@@ -240,10 +253,14 @@ namespace MouseWithoutBorders.Class
                 Application.SetCompatibleTextRenderingDefault(false);
 
                 InitAndCleanup.Init();
+
+                // Only PowerToys Settings connects to this pipe.
+#if !MWB_STANDALONE
                 if (!Common.RunOnLogonDesktop)
                 {
                     StartSettingSyncThread();
                 }
+#endif
 
                 Core.Helper.WndProcCounter++;
 

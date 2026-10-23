@@ -43,7 +43,11 @@ namespace MouseWithoutBordersService
             var host = builder
             .UseWindowsService(options =>
             {
+#if MWB_STANDALONE
+                options.ServiceName = "MWBX9.Service";
+#else
                 options.ServiceName = "PowerToys.MWB.Service";
+#endif
             })
             .ConfigureServices(services =>
             {

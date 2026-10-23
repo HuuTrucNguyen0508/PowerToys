@@ -39,6 +39,10 @@ namespace MouseWithoutBorders
                 return;
             }
 
+            // The standalone helper must not quit when an unrelated PowerToys.exe exits.
+#if MWB_STANDALONE
+            ETWTrace etwTrace = null;
+#else
             ETWTrace etwTrace = new ETWTrace();
 
             RunnerHelper.WaitForPowerToysRunnerExitFallback(() =>
@@ -46,6 +50,7 @@ namespace MouseWithoutBorders
                 etwTrace?.Dispose();
                 Application.Exit();
             });
+#endif
 
             string[] args = Environment.GetCommandLineArgs();
 

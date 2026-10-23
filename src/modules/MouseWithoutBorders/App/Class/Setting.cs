@@ -44,6 +44,21 @@ namespace MouseWithoutBorders.Class
 {
     internal class Settings
     {
+        // The standalone app keeps its settings and logs apart from a PowerToys MWB install:
+        // %LOCALAPPDATA%\Microsoft\PowerToys\MWB-X9.
+#if MWB_STANDALONE
+        internal const string ModuleFolderName = "MWB-X9";
+
+        private static readonly System.Text.Json.JsonSerializerOptions StandaloneSerializerOptions = new()
+        {
+            WriteIndented = true,
+            MaxDepth = 0,
+            IncludeFields = true,
+        };
+#else
+        internal const string ModuleFolderName = MouseWithoutBordersSettings.ModuleName;
+#endif
+
         internal bool Changed;
 
         private readonly SettingsUtils _settingsUtils;
@@ -71,16 +86,22 @@ namespace MouseWithoutBorders.Class
         {
             try
             {
-                if (!_settingsUtils.SettingsExists("MouseWithoutBorders"))
+                if (!_settingsUtils.SettingsExists(ModuleFolderName))
                 {
                     var defaultSettings = new MouseWithoutBordersSettings();
+
+                    // Without PowerToys Settings to pair this machine, the standalone app opens the setup wizard on first start.
+#if MWB_STANDALONE
+                    defaultSettings.Properties.FirstRun = true;
+#endif
+
                     if (!Common.RunOnLogonDesktop)
                     {
-                        defaultSettings.Save(_settingsUtils);
+                        SaveSettingsFile(defaultSettings);
                     }
                 }
 
-                var settings = _settingsUtils.GetSettingsOrDefault<MouseWithoutBordersSettings>("MouseWithoutBorders");
+                var settings = _settingsUtils.GetSettingsOrDefault<MouseWithoutBordersSettings>(ModuleFolderName);
                 if (settings != null)
                 {
                     PauseInstantSaving = true;
@@ -99,6 +120,16 @@ namespace MouseWithoutBorders.Class
             }
 
             PauseInstantSaving = false;
+        }
+
+        private void SaveSettingsFile(MouseWithoutBordersSettings settings)
+        {
+            // MouseWithoutBordersSettings.Save always writes to the PowerToys MWB folder.
+#if MWB_STANDALONE
+            _settingsUtils.SaveSettings(System.Text.Json.JsonSerializer.Serialize(settings, StandaloneSerializerOptions), ModuleFolderName);
+#else
+            settings.Save(_settingsUtils);
+#endif
         }
 
         // Exercise the reload ordering with substitute cursor/cache/network/save effects in tests.
@@ -189,7 +220,7 @@ namespace MouseWithoutBorders.Class
                     {
                         lock (_loadingSettingsLock)
                         {
-                            _settings.Save(_settingsUtils);
+                            SaveSettingsFile(_settings);
                         }
 
                         saved = true;
@@ -220,7 +251,7 @@ namespace MouseWithoutBorders.Class
             _pairingKeyCodec = pairingKeyCodec;
             _settingsUtils = SettingsUtils.Default;
 
-            _watcher = SettingsHelper.GetFileWatcher("MouseWithoutBorders", "settings.json", () =>
+            _watcher = SettingsHelper.GetFileWatcher(ModuleFolderName, "settings.json", () =>
             {
                 try
                 {
@@ -1234,10 +1265,15 @@ namespace MouseWithoutBorders.Class
                     return false;
                 }
 
+                // Without PowerToys Settings, the original UI is the only UI.
+#if MWB_STANDALONE
+                return true;
+#else
                 lock (_loadingSettingsLock)
                 {
                     return _properties.ShowOriginalUI;
                 }
+#endif
             }
 
             set
