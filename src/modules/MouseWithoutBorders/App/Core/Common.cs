@@ -1218,7 +1218,7 @@ internal static class Common
             {
                 foreach (TcpSk t in sk.TcpSockets)
                 {
-                    if (t != null && t.IsClient && t.Status == SocketStatus.Connecting
+                    if (t != null && t.IsClient && t.Status is SocketStatus.Connecting or SocketStatus.Handshaking
                         && t.BackingSocket != null && t.MachineName.Equals(machineName, StringComparison.OrdinalIgnoreCase)
                         && t.Address.ToString().Equals(ip.ToString(), StringComparison.OrdinalIgnoreCase))
                     {

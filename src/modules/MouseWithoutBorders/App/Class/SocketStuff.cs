@@ -1426,8 +1426,13 @@ namespace MouseWithoutBorders.Class
                                     packageCount = -1; // Trusted
                                     InvalidKeyFound = false;
                                     currentTcp.MachineId = (uint)remoteID;
-                                    currentTcp.Status = SocketStatus.Connected;
                                     UpdateTcpSockets(currentTcp, SocketStatus.Connected);
+                                    if (currentTcp.Status != SocketStatus.Connected)
+                                    {
+                                        currentSocket.Close();
+                                        return;
+                                    }
+
                                     Logger.LogDebug("))))))))))))))) Machine got trusted: " + remoteMachine + ":" + strIP + ", Is client: " + isClient);
 
                                     // Remember where it is, so we can connect back to it without DNS.
@@ -1982,8 +1987,12 @@ namespace MouseWithoutBorders.Class
                             }
                             else
                             {
-                                // Keep the first connected one.
                                 tobeRemovedSockets = TcpSockets.Where(item => item.IsClient && !ReferenceEquals(item, tcp) && item.MachineName.Equals(tcp.MachineName, StringComparison.OrdinalIgnoreCase)).ToList();
+                                if (tobeRemovedSockets.Any(item => item.Status == SocketStatus.Connected))
+                                {
+                                    status = SocketStatus.ForceClosed;
+                                    tobeRemovedSockets = new List<TcpSk> { tcp };
+                                }
                             }
 
                             foreach (TcpSk t in tobeRemovedSockets)
