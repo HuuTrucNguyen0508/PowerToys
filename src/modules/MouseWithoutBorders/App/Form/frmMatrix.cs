@@ -587,8 +587,8 @@ namespace MouseWithoutBorders
 
             for (int i = 0; i < MachineStuff.MAX_MACHINE; i++)
             {
-                machines[i].Left = xOffset + (i % columns * dx);
-                machines[i].Top = yOffset + (i / columns * rowStep);
+                machines[i].Left = xOffset + ((i % columns) * dx);
+                machines[i].Top = yOffset + ((i / columns) * rowStep);
                 machines[i].Visible = true;
             }
         }
