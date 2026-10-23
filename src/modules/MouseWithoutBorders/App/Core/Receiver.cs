@@ -27,8 +27,9 @@ namespace MouseWithoutBorders.Core;
 
 internal static class Receiver
 {
-    private static readonly uint QUEUE_SIZE = 50;
-    private static readonly int[] RecentProcessedPackageIDs = new int[QUEUE_SIZE];
+    // Recent packages, keyed by sender and ID: each sender numbers its packages independently.
+    private static readonly uint QUEUE_SIZE = 128;
+    private static readonly long[] RecentProcessedPackageIDs = new long[QUEUE_SIZE];
     private static int recentProcessedPackageIndex;
 #pragma warning disable SA1307 // Accessible fields should begin with upper-case letter
     internal static long processedPackageCount;
@@ -61,11 +62,13 @@ internal static class Receiver
             and not PackageType.Handshake and not PackageType.HandshakeAck)
         {
             // END
+            long packageKey = ((long)(uint)package.Src << 32) | (uint)package.Id;
+
             lock (RecentProcessedPackageIDs)
             {
                 for (int i = 0; i < QUEUE_SIZE; i++)
                 {
-                    if (RecentProcessedPackageIDs[i] == package.Id)
+                    if (RecentProcessedPackageIDs[i] == packageKey)
                     {
                         skippedPackageCount++;
                         return false;
@@ -74,7 +77,7 @@ internal static class Receiver
 
                 processedPackageCount++;
                 recentProcessedPackageIndex = (int)((recentProcessedPackageIndex + 1) % QUEUE_SIZE);
-                RecentProcessedPackageIDs[recentProcessedPackageIndex] = package.Id;
+                RecentProcessedPackageIDs[recentProcessedPackageIndex] = packageKey;
             }
         }
 

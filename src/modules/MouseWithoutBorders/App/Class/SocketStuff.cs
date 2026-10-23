@@ -1327,7 +1327,14 @@ namespace MouseWithoutBorders.Class
                 try
                 {
                     DATA package = TcpReceiveData(currentTcp, out int receivedCount);
-                    remoteID = package.Src;
+
+                    // Matrix packets carry a slot index in Src, not the sender's ID.
+                    bool isMatrixPackage = (package.Type & PackageType.Matrix) == PackageType.Matrix
+                        && package.Type is not PackageType.Error and not PackageType.Invalid;
+                    if (!isMatrixPackage)
+                    {
+                        remoteID = package.Src;
+                    }
 
                     if (package.Type == PackageType.Error)
                     {
