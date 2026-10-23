@@ -65,7 +65,7 @@ jobs:
       - name: Run unit tests
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse -Path x64/Release -Filter MouseWithoutBorders.UnitTests.exe | Select-Object -First 1
+          $exe = Get-ChildItem -Recurse -Path src/modules/MouseWithoutBorders/MouseWithoutBorders.UnitTests/bin/x64/Release -Filter MouseWithoutBorders.UnitTests.exe | Select-Object -First 1
           if (-not $exe) { throw "MouseWithoutBorders.UnitTests.exe not found" }
           & $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
