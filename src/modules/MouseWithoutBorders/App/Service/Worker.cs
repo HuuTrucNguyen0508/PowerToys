@@ -56,6 +56,9 @@ namespace MouseWithoutBordersService
 
             try
             {
+#if MWB_STANDALONE
+                userLocalAppDataPath = "\"" + System.Text.RegularExpressions.Regex.Replace(userLocalAppDataPath, @"(\\+)$", "$1$1") + "\"";
+#endif
                 string me = "\"" + Path.GetDirectoryName(myBinary) + "\\" + processName + "\"";
                 int waitCount = 20;
 

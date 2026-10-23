@@ -163,6 +163,8 @@ jobs:
         shell: pwsh
         run: |
           $bin = "out/MWB-X9-$env:MWB_VERSION-x64/bin"
+          $junk = @(Get-ChildItem $bin -Recurse -File | Where-Object { $_.Extension -in '.pdb', '.lib', '.exp', '.lastcodeanalysissucceeded' -or $_.Name -eq 'backup_restore_settings.json' })
+          if ($junk.Count) { throw "Build junk in package: $($junk.Name -join ', ')" }
           foreach ($dll in 'PowerToys.MouseWithoutBorders.dll', 'PowerToys.MouseWithoutBordersService.dll') {
             $bytes = [IO.File]::ReadAllBytes((Resolve-Path "$bin/$dll"))
             $text = [Text.Encoding]::Unicode.GetString($bytes) + [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
@@ -192,6 +194,30 @@ jobs:
           $refused = $false
           try { & "$pkg\Install-MWBX9.ps1" -InstallDir $other } catch { $refused = $true; "Refused as expected: $_" }
           Assert ($refused -and (Test-Path (Join-Path $other 'keep.txt'))) 'install refuses a non-empty foreign folder'
+          Set-Content (Join-Path $other 'PowerToys.MouseWithoutBorders.exe') 'not an install'
+          & "$pkg\Uninstall-MWBX9.ps1" -InstallDir $other
+          Assert (Test-Path (Join-Path $other 'keep.txt')) 'uninstall preserves an unmarked folder even if an MWB executable is present'
+
+          $unsafe = Join-Path $env:RUNNER_TEMP 'mwb-user-writable'
+          New-Item -ItemType Directory -Force $unsafe | Out-Null
+          $refused = $false
+          try { & "$pkg\Install-MWBX9.ps1" -InstallDir $unsafe } catch { $refused = $true; "Refused as expected: $_" }
+          Assert $refused 'install refuses even an empty folder outside Program Files'
+
+          $unsafe = Join-Path $env:ProgramFiles 'MWB-X9-unsafe-test'
+          New-Item -ItemType Directory -Force $unsafe | Out-Null
+          & icacls.exe $unsafe /grant '*S-1-1-0:(OI)(CI)M'
+          if ($LASTEXITCODE) { throw 'Could not prepare unsafe ACL fixture.' }
+          $refused = $false
+          try { & "$pkg\Install-MWBX9.ps1" -InstallDir $unsafe } catch { $refused = $true; "Refused as expected: $_" }
+          Assert $refused 'install refuses explicit non-admin write permissions under Program Files'
+          Remove-Item $unsafe -Recurse -Force
+
+          New-Item -ItemType Junction -Path $unsafe -Target $other | Out-Null
+          $refused = $false
+          try { & "$pkg\Install-MWBX9.ps1" -InstallDir $unsafe } catch { $refused = $true; "Refused as expected: $_" }
+          Assert ($refused -and (Test-Path (Join-Path $other 'keep.txt'))) 'install refuses a junction under Program Files'
+          [IO.Directory]::Delete($unsafe)
 
           & "$pkg\Install-MWBX9.ps1" -Autostart
           & "$pkg\Install-MWBX9.ps1" -Autostart
@@ -206,14 +232,34 @@ jobs:
           Assert ($svc.StartMode -eq 'Manual') 'service is demand start'
           Assert ($svc.StartName -eq 'LocalSystem') 'service runs as LocalSystem'
           Assert ($svc.ServiceType -eq 'Own Process') 'service is an own-process service'
-          Assert ($svc.PathName.StartsWith("`"$dir\PowerToys.MouseWithoutBordersService.exe`" ")) 'service binPath is the quoted service exe plus a path'
+          Assert ($svc.PathName -eq "`"$dir\PowerToys.MouseWithoutBordersService.exe`" `"$env:LOCALAPPDATA`"") 'service binPath quotes both executable and LocalAppData'
           $sd = (& sc.exe sdshow MWBX9.Service) -join ''
           "SDDL: $sd"
-          # sdshow prints well-known SIDs as aliases (the runner's built-in Administrator is LA), so compare parsed ACEs.
-          # RPWPDTLO = SERVICE_START | SERVICE_STOP | SERVICE_PAUSE_CONTINUE | SERVICE_INTERROGATE = 0xF0.
-          $userAces = @((New-Object Security.AccessControl.RawSecurityDescriptor($sd)).DiscretionaryAcl | Where-Object { $_.SecurityIdentifier.Value -eq $sid })
-          Assert ($userAces.Count -eq 1 -and $userAces[0].AceType -eq 'AccessAllowed' -and $userAces[0].AccessMask -eq 0xF0) 'DACL lets the target user start, stop and query the service'
-          Assert ($sd.Contains('(A;;CCLCSWLOCRRC;;;IU)')) 'DACL matches generateSecurityDescriptor'
+          $expectedAces = @{
+            'S-1-5-18' = 0x201FD
+            'S-1-5-32-544' = 0xF01FF
+            'S-1-5-4' = 0x2018D
+            'S-1-5-6' = 0x2018D
+            'S-1-5-11' = 0x100
+            'S-1-5-32-547' = 0x201FD
+          }
+          $expected = @($expectedAces.GetEnumerator() | ForEach-Object { '{0}|{1}|0' -f $_.Key, $_.Value })
+          $expected += "$sid|240|0"
+          $actual = @((New-Object Security.AccessControl.RawSecurityDescriptor($sd)).DiscretionaryAcl | ForEach-Object {
+            Assert ($_.AceType -eq 'AccessAllowed') 'service DACL contains only ordinary allow ACEs' | Out-Host
+            '{0}|{1}|{2}' -f $_.SecurityIdentifier.Value, $_.AccessMask, [int]$_.AceFlags
+          })
+          Assert (-not (Compare-Object ($expected | Sort-Object) ($actual | Sort-Object))) 'complete service DACL exactly matches upstream rights plus target SID, with no extra trustees or rights'
+
+          $acl = Get-Acl $dir
+          Assert ($acl.AreAccessRulesProtected -and $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -eq 'S-1-5-32-544') 'install directory has an admin owner and protected ACL'
+          foreach ($item in @((Get-Item $dir)) + @(Get-ChildItem $dir -Recurse -Force)) {
+            $itemAcl = Get-Acl -LiteralPath $item.FullName
+            $bad = @($itemAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | Where-Object {
+              $_.AccessControlType -eq 'Allow' -and $_.IdentityReference.Value -notin 'S-1-5-18', 'S-1-5-32-544' -and ([int]$_.FileSystemRights -band 0x500D0156)
+            })
+            Assert ($bad.Count -eq 0) "only admins and SYSTEM can modify $($item.Name)"
+          }
 
           $rule = Get-NetFirewallRule -Name 'MWB-X9'
           $ports = $rule | Get-NetFirewallPortFilter
@@ -246,20 +292,46 @@ jobs:
           Assert (Test-Path (Join-Path $data 'Logs')) 'logs are in the MWB-X9 folder'
           Assert (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\MouseWithoutBorders'))) 'the PowerToys MWB folder is untouched'
           Get-ChildItem (Join-Path $data 'Logs') -Recurse -File | ForEach-Object { "--- $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
-          Stop-Process -Id $app.Id -Force
+          & "$pkg\Install-MWBX9.ps1" -Autostart
+          $app.Refresh()
+          Assert ($app.HasExited) 'reinstall stops the running app before replacing files'
 
-          # Service mode. The runner may have no interactive console session, so only report what happens.
-          try {
-            Start-Service -Name 'MWBX9.Service'
-          } catch {
-            "Start-Service: $_"
-          }
+          Start-Service -Name 'MWBX9.Service'
           Start-Sleep -Seconds 20
           "Service status: $((Get-Service 'MWBX9.Service').Status)"
+          $workers = @(Get-CimInstance Win32_Process -Filter "Name = 'PowerToys.MouseWithoutBorders.exe'")
+          Assert ($workers.Count -eq 2) 'service started both desktop workers'
+          foreach ($process in $workers) {
+            $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner
+            Assert ($owner.User -eq 'SYSTEM') 'desktop worker runs as SYSTEM'
+            Assert ($process.CommandLine.EndsWith(" `"$env:LOCALAPPDATA`"")) 'desktop worker receives quoted LocalAppData'
+          }
           Get-CimInstance Win32_Process -Filter "Name LIKE 'PowerToys.MouseWithoutBorders%'" | ForEach-Object {
             $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
             "{0} {1} session {2} owner {3}\{4}: {5}" -f $_.ProcessId, $_.Name, $_.SessionId, $owner.Domain, $owner.User, $_.CommandLine
           }
+
+          $testUser = New-LocalUser -Name 'MWBX9-Test' -NoPassword -Disabled
+          $testProfileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($testUser.SID.Value)"
+          $testProfile = Join-Path $env:RUNNER_TEMP 'MWB target profile'
+          New-Item -ItemType Directory -Force $testProfile | Out-Null
+          New-Item $testProfileKey -Force | Out-Null
+          New-ItemProperty $testProfileKey -Name ProfileImagePath -Value $testProfile | Out-Null
+          & "$pkg\Install-MWBX9.ps1" -Autostart -User "$env:COMPUTERNAME\MWBX9-Test"
+          $testLocal = Join-Path $testProfile 'AppData\Local'
+          $testStartup = Join-Path $testProfile 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\MWB-X9.lnk'
+          Assert (Test-Path $testStartup) 'elevated install creates startup shortcut in target profile, not admin profile'
+          Assert (-not (Get-Process -Name 'PowerToys.MouseWithoutBorders*' -ErrorAction SilentlyContinue)) 'reinstall stops both SYSTEM workers and the clipboard helper'
+          $svc = Get-CimInstance Win32_Service -Filter "Name = 'MWBX9.Service'"
+          Assert ($svc.PathName -eq "`"$dir\PowerToys.MouseWithoutBordersService.exe`" `"$testLocal`"") 'service image path preserves spaces without 8.3 names'
+          Start-Service -Name 'MWBX9.Service'
+          Start-Sleep -Seconds 20
+          $workers = @(Get-CimInstance Win32_Process -Filter "Name = 'PowerToys.MouseWithoutBorders.exe'")
+          Assert ($workers.Count -eq 2) 'service starts both workers with spaces in target profile'
+          foreach ($process in $workers) {
+            Assert ($process.CommandLine.EndsWith(" `"$testLocal`"")) 'worker command line preserves full target LocalAppData with spaces'
+          }
+          Assert (Test-Path "$testLocal\Microsoft\PowerToys\MWB-X9\settings.json") 'SYSTEM worker writes settings under the full target path with spaces'
 
           & "$dir\Uninstall-MWBX9.ps1" -RemoveData
           & "$pkg\Uninstall-MWBX9.ps1" -RemoveData
@@ -272,6 +344,10 @@ jobs:
           Assert (-not (Test-Path $data)) 'user data is gone'
           Assert (-not (Test-Path "$env:SystemRoot\System32\config\systemprofile\AppData\Local\Microsoft\PowerToys\MWB-X9")) 'SYSTEM profile data is gone'
           Assert (-not (Get-Process -Name 'PowerToys.MouseWithoutBorders*' -ErrorAction SilentlyContinue)) 'no MWB processes are left'
+          Assert (-not (Test-Path "$testLocal\Microsoft\PowerToys\MWB-X9")) 'target profile data with spaces is gone'
+          Assert (-not (Test-Path $testStartup)) 'target profile startup shortcut is gone'
+          Remove-Item $testProfileKey -Recurse -Force
+          Remove-LocalUser -Name 'MWBX9-Test'
 
       - uses: actions/upload-artifact@v4
         with:

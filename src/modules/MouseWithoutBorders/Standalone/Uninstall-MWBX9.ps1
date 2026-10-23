@@ -35,7 +35,6 @@ $ServiceName = 'MWBX9.Service'
 $FirewallRuleName = 'MWB-X9'
 $ShortcutName = 'MWB-X9.lnk'
 $MarkerName = '.mwb-x9-install'
-$AppExe = 'PowerToys.MouseWithoutBorders.exe'
 
 function Get-ProfilePath {
     param([string]$Sid)
@@ -97,6 +96,17 @@ function Stop-InstalledProcess {
 
 function Remove-Folder {
     param([string]$Path)
+
+    $ancestor = Get-Item -LiteralPath $Path -Force
+    while ($ancestor) {
+        if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to delete through reparse point $($ancestor.FullName). Remove the link manually."
+        }
+        $ancestor = $ancestor.Parent
+    }
+    if (Get-ChildItem -LiteralPath $Path -Force -Recurse | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | Select-Object -First 1) {
+        throw "Refusing to delete $Path because it contains a reparse point. Remove the link manually."
+    }
 
     for ($attempt = 1; (Test-Path -LiteralPath $Path) -and $attempt -le 5; $attempt++) {
         try {
@@ -174,7 +184,7 @@ foreach ($dir in $installDirs) {
     }
 
     # Only delete folders that Install-MWBX9.ps1 created.
-    if (-not (Test-Path -LiteralPath (Join-Path $dir $MarkerName)) -and -not (Test-Path -LiteralPath (Join-Path $dir $AppExe))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $dir $MarkerName) -PathType Leaf)) {
         Write-Warning "Skipped $dir because it doesn't look like an MWB-X9 install folder."
         continue
     }

@@ -16,7 +16,7 @@ Running it again converges to the same state, so it also updates or repairs an
 install and switches between service and non-service mode.
 
 .PARAMETER InstallDir
-Install folder. Defaults to C:\Program Files\MWB-X9.
+Install folder. Must be directly under Program Files. Defaults to C:\Program Files\MWB-X9.
 
 .PARAMETER User
 The account that uses MWB on this laptop, as DOMAIN\name or name. Service mode
@@ -179,34 +179,52 @@ function Set-Shortcut {
     $shortcut.Save()
 }
 
-# Service mode passes the user's LocalAppData path unquoted on the command line
-# (ModuleInterface/dllmain.cpp:250-253, App/Service/Worker.cs), so a path with a space breaks it.
-# Use the 8.3 short path when that avoids the space.
-function Get-ServicePathArgument {
+function Assert-ProtectedPath {
     param([string]$Path)
 
-    if (-not $Path.Contains(' ')) {
-        return $Path
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing reparse point $Path. Install files and ancestors must be real local paths."
     }
 
-    try {
-        $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($Path).ShortPath
-    }
-    catch {
-        $short = $null
-    }
-
-    if ($short -and -not $short.Contains(' ')) {
-        return $short
+    $acl = Get-Acl -LiteralPath $Path
+    $trusted = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {
+        throw "Refusing $Path because its owner can replace SYSTEM service files. Use an administrator-owned folder under Program Files."
     }
 
-    Write-Warning "The LocalAppData path '$Path' contains a space and has no 8.3 short name. Service mode would read the wrong settings folder. Re-run with -NoService."
-    $Path
+    # At the volume root, creating a sibling is safe. Deleting or changing this ancestor is not.
+    $writeMask = 0x500D0156
+    if ($item.FullName.TrimEnd('\') -eq [IO.Path]::GetPathRoot($item.FullName).TrimEnd('\')) { $writeMask = 0x500D0040 }
+    foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        if ($rule.AccessControlType -eq 'Allow' -and
+            -not ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
+            $rule.IdentityReference.Value -notin $trusted -and
+            ([int]$rule.FileSystemRights -band $writeMask)) {
+            throw "Refusing writable path $Path. Only SYSTEM and administrators may change service files or their ancestors."
+        }
+    }
 }
 
 # --- Check the package and the install folder -------------------------------------------------
 
 $InstallDir = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
+$programFiles = [Environment]::GetFolderPath('ProgramFiles').TrimEnd('\')
+if ((Split-Path -Parent $InstallDir) -ne $programFiles) {
+    throw 'InstallDir must be a direct child of Program Files. User-writable parents let another user replace the SYSTEM service.'
+}
+
+$ancestor = Get-Item -LiteralPath $programFiles
+while ($ancestor) {
+    Assert-ProtectedPath $ancestor.FullName
+    $ancestor = $ancestor.Parent
+}
+
+if (Test-Path -LiteralPath $InstallDir) {
+    Assert-ProtectedPath $InstallDir
+    Get-ChildItem -LiteralPath $InstallDir -Force -Recurse | ForEach-Object { Assert-ProtectedPath $_.FullName }
+}
+
 $source = Join-Path $PSScriptRoot 'bin'
 if (-not (Test-Path -LiteralPath (Join-Path $source $AppExe))) {
     throw "Run this script from the extracted MWB-X9 package folder. $source\$AppExe is missing."
@@ -228,6 +246,9 @@ if (-not $profilePath) {
 
 $localAppData = Get-UserShellFolder $target.Sid $profilePath 'Local AppData' 'AppData\Local'
 $startupDir = Get-UserShellFolder $target.Sid $profilePath 'Startup' 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
+if (-not [IO.Path]::IsPathRooted($localAppData) -or $localAppData.IndexOfAny([char[]]@('"', "`r", "`n")) -ge 0) {
+    throw 'The target user LocalAppData must be an absolute path without quotes or newlines.'
+}
 
 $otherMwb = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = '$AppExe'" |
     Where-Object { $_.ExecutablePath -and -not $_.ExecutablePath.StartsWith($InstallDir + '\', [StringComparison]::OrdinalIgnoreCase) })
@@ -242,6 +263,9 @@ Stop-MwbService
 Stop-InstalledProcess $InstallDir
 
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+$acl = New-Object Security.AccessControl.DirectorySecurity
+$acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)')
+Set-Acl -LiteralPath $InstallDir -AclObject $acl
 Set-Content -LiteralPath (Join-Path $InstallDir $MarkerName) -Value 'MWB-X9 install folder. Uninstall-MWBX9.ps1 deletes this folder.' -Encoding ASCII
 
 & robocopy.exe $source $InstallDir /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS /NP /XF $MarkerName 'Install-MWBX9.ps1' 'Uninstall-MWBX9.ps1' 'README.md' | Out-Null
@@ -258,11 +282,8 @@ foreach ($file in 'Install-MWBX9.ps1', 'Uninstall-MWBX9.ps1', 'README.md') {
 
 Get-ChildItem -LiteralPath $InstallDir -Recurse -File | Unblock-File
 
-# A LocalSystem service starts programs from this folder, so only SYSTEM and Administrators may change it.
-& icacls.exe $InstallDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "icacls failed with exit code $LASTEXITCODE."
-}
+Assert-ProtectedPath $InstallDir
+Get-ChildItem -LiteralPath $InstallDir -Force -Recurse | ForEach-Object { Assert-ProtectedPath $_.FullName }
 
 $appPath = Join-Path $InstallDir $AppExe
 
@@ -272,10 +293,8 @@ if ($NoService) {
     Remove-MwbService
 }
 else {
-    # Same command line as ModuleInterface/dllmain.cpp:250-253: the quoted service exe, then the
-    # user's LocalAppData path with double quotes escaped (escapeDoubleQuotes, dllmain.cpp:97-111).
-    $servicePathArgument = (Get-ServicePathArgument $localAppData).Replace('"', '\"')
-    $binPath = '"{0}" {1}' -f (Join-Path $InstallDir $ServiceExe), $servicePathArgument
+    $servicePathArgument = $localAppData -replace '(\\+)$', '$1$1'
+    $binPath = '"{0}" "{1}"' -f (Join-Path $InstallDir $ServiceExe), $servicePathArgument
 
     $existing = Get-CimInstance -ClassName Win32_Service -Filter "Name = '$ServiceName'"
     if ($existing) {

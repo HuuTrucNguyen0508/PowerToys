@@ -63,7 +63,7 @@ Options:
 | `-NoService` | Run without service mode. See [Service mode and UAC](#service-mode-and-uac). |
 | `-Autostart` | Start MWB-X9 when the user signs in. |
 | `-AllowPublicNetwork` | Also open the firewall on networks that Windows marks as Public. |
-| `-InstallDir <path>` | Install somewhere other than `C:\Program Files\MWB-X9`. |
+| `-InstallDir <path>` | Use another direct child of Program Files. The folder, its contents and its ancestors must have administrator ownership and no non-admin write permissions. Links and junctions are refused. |
 | `-TcpPort <port>` | Open a different port pair if you changed `TCPPort` in the settings. |
 
 Running the script again updates or repairs the install. It also switches modes: the options of the last run apply.
@@ -100,7 +100,7 @@ The settings window can't change these shortcuts. They come from `settings.json`
 
 By default, MWB-X9 runs in service mode. The Start Menu and sign-in shortcuts run `PowerToys.MouseWithoutBorders.exe UseService`, which starts `MWBX9.Service`. The service starts two copies of MWB as SYSTEM, one on the user's desktop and one on the secure desktop, then stops. That lets you control UAC prompts, the lock screen and the Ctrl+Alt+Del screen from another machine.
 
-- Only the user you installed for (and administrators) can start the service. For another user, run the install script again with `-User`.
+- The service uses the upstream PowerToys permissions. The target user, administrators, SYSTEM and the legacy Power Users group can start it. Other interactive users and Authenticated Users receive no start or stop rights. For another user, run the install script again with `-User`.
 - The service starts only after that user signs in and the shortcut runs. Before the first sign-in after a restart, MWB-X9 isn't running.
 - If the service can't start, MWB-X9 shows a tooltip and runs without service mode.
 - With `-NoService`, MWB-X9 runs as the signed-in user and can't control UAC prompts or the lock screen.
@@ -118,6 +118,8 @@ powershell -ExecutionPolicy Bypass -File 'C:\Program Files\MWB-X9\Uninstall-MWBX
 The script stops MWB-X9, deletes `MWBX9.Service`, the `MWB-X9` firewall rule, the shortcuts and the install folder.
 
 With `-RemoveData` it also deletes, for every user and for the SYSTEM account, the settings and logs folder `AppData\Local\Microsoft\PowerToys\MWB-X9`. When PowerToys isn't installed, it also removes the `MouseWithoutBorders` event log sources. Without `-RemoveData`, the settings stay, so a reinstall keeps the pairing and layout.
+
+Uninstall deletes an install folder only when it has the `.mwb-x9-install` marker. It refuses to delete through links or junctions. Remove those links manually before retrying.
 
 To check that nothing is left:
 
