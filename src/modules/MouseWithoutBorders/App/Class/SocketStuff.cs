@@ -1988,8 +1988,7 @@ namespace MouseWithoutBorders.Class
                             else
                             {
                                 tobeRemovedSockets = TcpSockets.Where(item => item.IsClient && !ReferenceEquals(item, tcp) && item.MachineName.Equals(tcp.MachineName, StringComparison.OrdinalIgnoreCase)).ToList();
-                                if (tobeRemovedSockets.Any(item => item.Status == SocketStatus.Connected
-                                    && Equals(PeerAddress.Normalize(item.Address), PeerAddress.Normalize(tcp.Address))))
+                                if (tobeRemovedSockets.Any(item => item.Status == SocketStatus.Connected))
                                 {
                                     status = SocketStatus.ForceClosed;
                                     tobeRemovedSockets = new List<TcpSk> { tcp };
