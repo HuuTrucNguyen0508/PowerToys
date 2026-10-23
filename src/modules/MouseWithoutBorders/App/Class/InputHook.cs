@@ -608,10 +608,8 @@ namespace MouseWithoutBorders.Class
                     // Issue #26597
                     return true;
                 }
-                else if (vkCode == Setting.Values.HotKeySwitchMachine ||
-                     vkCode == Setting.Values.HotKeySwitchMachine + 1 ||
-                     vkCode == Setting.Values.HotKeySwitchMachine + 2 ||
-                     vkCode == Setting.Values.HotKeySwitchMachine + 3)
+                else if (vkCode >= Setting.Values.HotKeySwitchMachine &&
+                     vkCode < Setting.Values.HotKeySwitchMachine + SwitchMachineHotKeyCount(Setting.Values.HotKeySwitchMachine))
                 {
                     if (Switch2(vkCode - Setting.Values.HotKeySwitchMachine))
                     {
@@ -621,6 +619,13 @@ namespace MouseWithoutBorders.Class
             }
 
             return true;
+        }
+
+        // Ctrl+Alt+1..9 or Ctrl+Alt+F1..F12 switch to matrix slots 1..N. F-keys have contiguous key codes; digits stop at 9.
+        // A first key of 0 means the hotkeys are disabled.
+        private static int SwitchMachineHotKeyCount(int firstKey)
+        {
+            return firstKey == 0 ? 0 : Math.Min(MachineStuff.MAX_MACHINE, firstKey == '1' ? 9 : 12);
         }
 
         private static bool Switch2(int index)
