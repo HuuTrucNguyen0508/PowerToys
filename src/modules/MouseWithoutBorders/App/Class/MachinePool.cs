@@ -19,7 +19,7 @@ namespace MouseWithoutBorders.Class
     /// <summary>
     /// Holds our current 'last known state of the world' information about Machines the user wants to connect to.
     /// Keeps track of whether machines are 'alive' or 'disconnected' implicitly via timestamps.
-    /// Only ever knows about Common.MAX_MACHINE machines.
+    /// Only ever knows about MachineStuff.MAX_MACHINE machines.
     /// </summary>
     /// <remarks>
     /// Operations in the class are designed to be easily thread-safe.
@@ -157,7 +157,7 @@ namespace MouseWithoutBorders.Class
                     {
                         continue; // next
                     }
-                    else if (list.Count >= 4)
+                    else if (list.Count >= MachineStuff.MAX_MACHINE)
                     {
                         throw new ArgumentException($"The number of machines exceeded the maximum allowed limit of {MachineStuff.MAX_MACHINE}. Actual count: {list.Count}.");
                     }
@@ -179,7 +179,7 @@ namespace MouseWithoutBorders.Class
                     {
                         continue; // next
                     }
-                    else if (list.Count >= 4)
+                    else if (list.Count >= MachineStuff.MAX_MACHINE)
                     {
                         throw new ArgumentException($"The number of machines exceeded the maximum allowed limit of {MachineStuff.MAX_MACHINE}. Actual count: {list.Count}.");
                     }
@@ -220,7 +220,8 @@ namespace MouseWithoutBorders.Class
 
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (!MachineStuff.InMachineMatrix(list[i].Name))
+                        // Never evict this machine: it may be missing from its own matrix.
+                        if (!MachineStuff.InMachineMatrix(list[i].Name) && !NamesAreEqual(list[i].Name, Common.MachineName?.Trim()))
                         {
                             slotFound = i;
                             break;

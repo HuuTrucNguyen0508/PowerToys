@@ -22,14 +22,17 @@ namespace MouseWithoutBorders.Class
 
             string[] st = s.Split(Comma);
 
-            if (st.Length < MachineStuff.MAX_MACHINE)
-            {
-                throw new ArgumentException("Not enough elements in encoded MachinePool string");
-            }
-
+            // Strings saved by a build with fewer slots (e.g. official 4-machine builds) leave the remaining entries empty.
             MachineInf[] rv = new MachineInf[MachineStuff.MAX_MACHINE];
             for (int i = 0; i < MachineStuff.MAX_MACHINE; i++)
             {
+                rv[i].Name = string.Empty;
+
+                if (i >= st.Length)
+                {
+                    continue;
+                }
+
                 string[] mc = st[i].Split(Colon);
                 if (mc.Length == 2)
                 {
