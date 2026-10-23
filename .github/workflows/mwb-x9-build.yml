@@ -1,0 +1,77 @@
+# Builds the mwb-x9 Mouse Without Borders fork on Windows, runs its unit tests,
+# and uploads PowerToys.MouseWithoutBorders.dll for deployment (see
+# src/modules/MouseWithoutBorders/MWB-X9.md).
+name: mwb-x9 build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Assembly version; must match the installed PowerToys build (e.g. 0.102.0.0)"
+        required: false
+        default: "0.102.0.0"
+  push:
+    branches: [mwb-x9]
+    paths:
+      - "src/modules/MouseWithoutBorders/**"
+      - ".github/workflows/mwb-x9-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      MWB_VERSION: ${{ inputs.version || '0.102.0.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Build MWB app and unit tests
+        shell: pwsh
+        run: |
+          msbuild src/modules/MouseWithoutBorders/MouseWithoutBorders.UnitTests/MouseWithoutBorders.UnitTests.csproj `
+            /restore /m /nologo /v:minimal `
+            /p:Platform=x64 /p:Configuration=Release `
+            /p:RestorePackagesConfig=true `
+            "/p:Version=$env:MWB_VERSION" `
+            /bl:artifacts/logs/mwb-x9.binlog
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Path x64/Release -Filter MouseWithoutBorders.UnitTests.exe | Select-Object -First 1
+          if (-not $exe) { throw "MouseWithoutBorders.UnitTests.exe not found" }
+          & $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Collect DLL and hashes
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Recurse -Path x64/Release -Filter PowerToys.MouseWithoutBorders.dll | Select-Object -First 1
+          if (-not $dll) { throw "PowerToys.MouseWithoutBorders.dll not found" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item $dll.FullName out/
+          $info = [System.Reflection.AssemblyName]::GetAssemblyName($dll.FullName)
+          "AssemblyVersion: $($info.Version)" | Tee-Object out/BUILDINFO.txt
+          "Commit: $env:GITHUB_SHA" | Tee-Object -Append out/BUILDINFO.txt
+          (Get-FileHash out/PowerToys.MouseWithoutBorders.dll -Algorithm SHA256).Hash | Tee-Object out/PowerToys.MouseWithoutBorders.dll.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mwb-x9-dll
+          path: out/
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mwb-x9-build-logs
+          path: artifacts/logs/
