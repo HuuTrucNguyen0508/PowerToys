@@ -62,6 +62,8 @@ namespace MouseWithoutBorders.Class
 
         internal bool Changed;
 
+        private static readonly System.Text.Json.JsonSerializerOptions SnapshotSerializerOptions = new() { IncludeFields = true };
+
         private readonly SettingsUtils _settingsUtils;
         private readonly Lock _loadingSettingsLock = new Lock();
         private readonly Lock _pairingKeyLock = new Lock();
@@ -71,6 +73,7 @@ namespace MouseWithoutBorders.Class
         private MouseWithoutBordersProperties _properties;
         private MouseWithoutBordersSettings _settings;
         private string _learnedAddresses = string.Empty;
+        private string _lastSavedSettings;
 
         internal static bool IsProtectedMode
         {
@@ -103,7 +106,16 @@ namespace MouseWithoutBorders.Class
                     }
                 }
 
-                var settings = _settingsUtils.GetSettingsOrDefault<MouseWithoutBordersSettings>(ModuleFolderName);
+                MouseWithoutBordersSettings settings;
+                lock (_loadingSettingsLock)
+                {
+                    settings = _settingsUtils.GetSettingsOrDefault<MouseWithoutBordersSettings>(ModuleFolderName);
+                    if (IsLastSavedSettings(settings))
+                    {
+                        return;
+                    }
+                }
+
                 if (settings != null)
                 {
                     PauseInstantSaving = true;
@@ -148,6 +160,11 @@ namespace MouseWithoutBorders.Class
             bool restoredAddresses = false;
             lock (_loadingSettingsLock)
             {
+                if (IsLastSavedSettings(settings))
+                {
+                    return;
+                }
+
                 _settings = settings;
                 _properties = settings.Properties;
                 if (!Name2IpIsGpoConfigured)
@@ -215,13 +232,33 @@ namespace MouseWithoutBorders.Class
         {
             if (!Common.RunOnLogonDesktop)
             {
-                SaveSettingsToJson((MouseWithoutBordersProperties)_properties.Clone());
+                SaveSettingsToJson();
             }
         }
 
-        private void SaveSettingsToJson(MouseWithoutBordersProperties properties_to_save)
+        internal void SaveCurrentSettings(Action<MouseWithoutBordersSettings> save)
         {
-            _settings.Properties = properties_to_save;
+            lock (_loadingSettingsLock)
+            {
+                var snapshot = new MouseWithoutBordersSettings
+                {
+                    Name = _settings.Name,
+                    Version = _settings.Version,
+                    Properties = _properties,
+                };
+                string serialized = System.Text.Json.JsonSerializer.Serialize(snapshot, SnapshotSerializerOptions);
+                snapshot = System.Text.Json.JsonSerializer.Deserialize<MouseWithoutBordersSettings>(serialized, SnapshotSerializerOptions);
+                save(snapshot);
+                _lastSavedSettings = serialized;
+            }
+        }
+
+        private bool IsLastSavedSettings(MouseWithoutBordersSettings settings) =>
+            _lastSavedSettings != null && settings != null
+                && _lastSavedSettings.Equals(System.Text.Json.JsonSerializer.Serialize(settings, SnapshotSerializerOptions), StringComparison.Ordinal);
+
+        private void SaveSettingsToJson()
+        {
             _ = Task.Factory.StartNew(
                 () =>
             {
@@ -231,10 +268,7 @@ namespace MouseWithoutBorders.Class
                 {
                     try
                     {
-                        lock (_loadingSettingsLock)
-                        {
-                            SaveSettingsFile(_settings);
-                        }
+                        SaveCurrentSettings(SaveSettingsFile);
 
                         saved = true;
                     }

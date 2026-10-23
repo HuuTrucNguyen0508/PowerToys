@@ -88,4 +88,29 @@ public sealed class SettingsAddressTests
             Common.RunOnLogonDesktop = wasLogonDesktop;
         }
     }
+
+    [TestMethod]
+    public void ReloadOfOurOwnSaveDoesNotRollBackANewerLayout()
+    {
+        var initial = new MouseWithoutBordersSettings();
+        initial.Properties.SecurityKey.Value = "TEST-KEY";
+        var settings = CreateSettings(initial);
+        settings.MachineMatrixString = "A";
+        MouseWithoutBordersSettings saved = null!;
+        settings.SaveCurrentSettings(snapshot => saved = snapshot);
+        settings.MachineMatrixString = "A,B";
+        settings.LearnAddresses(new[] { ("B", IPAddress.Parse("192.168.1.20")) });
+        Assert.AreEqual("A", saved.Properties.MachineMatrixString.Single());
+        Assert.AreEqual(string.Empty, saved.Properties.Name2IP.Value);
+        int effects = 0;
+        settings.ApplyLoadedSettings(saved, () => effects++, () => effects++, () => effects++, () => effects++);
+
+        Assert.AreEqual("A,B", settings.MachineMatrixString);
+        Assert.AreEqual("B 192.168.1.20 #learned", settings.Name2IP);
+        Assert.AreEqual(0, effects);
+        settings.SaveCurrentSettings(snapshot => saved = snapshot);
+        string[] expected = ["A", "B"];
+        CollectionAssert.AreEqual(expected, saved.Properties.MachineMatrixString);
+        Assert.AreEqual(settings.Name2IP, saved.Properties.Name2IP.Value);
+    }
 }
