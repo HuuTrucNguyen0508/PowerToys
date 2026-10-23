@@ -62,6 +62,8 @@ namespace MouseWithoutBorders
             labelExitMM.Text = "Exit the application, Ctrl+Alt+Shift+:";
             radioButtonNum.Text = $"&1 \u2026 {Math.Min(9, (int)MachineStuff.MAX_MACHINE)}";
             radioButtonF1.Text = $"&F1 \u2026 F{Math.Min(12, (int)MachineStuff.MAX_MACHINE)}";
+            int gridRows = (MachineStuff.MAX_MACHINE + (MachineStuff.MATRIX_COLUMNS - 1)) / MachineStuff.MATRIX_COLUMNS;
+            checkBoxTwoRow.Text = $"G&rid ({MachineStuff.MATRIX_COLUMNS}\u00D7{gridRows})";
             textBoxMachineName2IP.Text = name2IpShown = Setting.Values.Name2IP;
         }
 

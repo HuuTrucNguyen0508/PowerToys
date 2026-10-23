@@ -259,7 +259,7 @@ namespace MouseWithoutBorders
             this.checkBoxTwoRow.Name = "checkBoxTwoRow";
             this.checkBoxTwoRow.Size = new System.Drawing.Size(72, 17);
             this.checkBoxTwoRow.TabIndex = 6;
-            this.checkBoxTwoRow.Text = "Two &Row";
+            this.checkBoxTwoRow.Text = "G&rid";
             this.toolTip.SetToolTip(this.checkBoxTwoRow, "Check this if you have machines above or below of each other so you can move mous" +
         "e up and down to switch machine.");
             this.checkBoxTwoRow.UseVisualStyleBackColor = true;
