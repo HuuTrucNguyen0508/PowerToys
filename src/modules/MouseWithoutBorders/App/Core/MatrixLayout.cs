@@ -132,6 +132,69 @@ internal static class MatrixLayout
     }
 
     /// <summary>
+    /// Replaces every slot holding <paramref name="oldName"/> (case-insensitive) with <paramref name="newName"/>.
+    /// If <paramref name="newName"/> is already in another slot, those slots are emptied instead, so the name stays unique.
+    /// Returns true if the matrix changed.
+    /// </summary>
+    internal static bool ReplaceName(string[] matrix, string oldName, string newName)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+
+        if (string.IsNullOrWhiteSpace(oldName) || string.IsNullOrWhiteSpace(newName))
+        {
+            return false;
+        }
+
+        oldName = oldName.Trim();
+        newName = newName.Trim();
+        if (oldName.Equals(newName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        bool newNamePresent = Array.Exists(matrix, m => newName.Equals(m?.Trim(), StringComparison.OrdinalIgnoreCase));
+        bool changed = false;
+
+        for (int i = 0; i < matrix.Length; i++)
+        {
+            if (oldName.Equals(matrix[i]?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                matrix[i] = newNamePresent ? string.Empty : newName;
+                newNamePresent = true;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// True if <paramref name="next"/> keeps every machine of <paramref name="current"/> in the same slot and only fills empty slots,
+    /// which is what a machine joining the layout looks like.
+    /// </summary>
+    internal static bool OnlyFillsEmptySlots(string[] current, string[] next)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(next);
+
+        if (current.Length != next.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < current.Length; i++)
+        {
+            string name = current[i]?.Trim() ?? string.Empty;
+            if (name.Length > 0 && !name.Equals(next[i]?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Number of columns in the layout: one row of all slots, or a grid <paramref name="gridColumns"/> wide.
     /// </summary>
     internal static int Columns(int slotCount, bool oneRow, int gridColumns)

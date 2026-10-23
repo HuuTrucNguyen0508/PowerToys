@@ -247,4 +247,59 @@ public sealed class MatrixLayoutTests
     {
         Assert.AreEqual(expected, MatrixLayout.Columns(slotCount, oneRow, gridColumns));
     }
+
+    [TestMethod]
+    public void ReplaceNameSwapsAnAddressForTheRealName()
+    {
+        string[] matrix = ["192.168.1.20", "B", string.Empty];
+        Assert.IsTrue(MatrixLayout.ReplaceName(matrix, " 192.168.1.20 ", "LAPTOP-A"));
+        CollectionAssert.AreEqual(new[] { "LAPTOP-A", "B", string.Empty }, matrix);
+    }
+
+    [TestMethod]
+    public void ReplaceNameEmptiesTheSlotWhenTheNameIsAlreadyPlaced()
+    {
+        string[] matrix = ["fe80::1", "laptop-a", "10.0.0.1"];
+        Assert.IsTrue(MatrixLayout.ReplaceName(matrix, "FE80::1", "LAPTOP-A"));
+        CollectionAssert.AreEqual(new[] { string.Empty, "laptop-a", "10.0.0.1" }, matrix);
+    }
+
+    [TestMethod]
+    public void ReplaceNameKeepsOnlyOneCopyWhenTheOldNameRepeats()
+    {
+        string[] matrix = ["10.0.0.1", string.Empty, "10.0.0.1"];
+        Assert.IsTrue(MatrixLayout.ReplaceName(matrix, "10.0.0.1", "A"));
+        CollectionAssert.AreEqual(new[] { "A", string.Empty, string.Empty }, matrix);
+    }
+
+    [DataTestMethod]
+    [DataRow("C", "D")]
+    [DataRow("A", "a")]
+    [DataRow("", "A")]
+    [DataRow("A", " ")]
+    public void ReplaceNameLeavesTheMatrixAloneWhenNothingMatches(string oldName, string newName)
+    {
+        string[] matrix = ["A", "B", string.Empty];
+        Assert.IsFalse(MatrixLayout.ReplaceName(matrix, oldName, newName));
+        CollectionAssert.AreEqual(new[] { "A", "B", string.Empty }, matrix);
+    }
+
+    [TestMethod]
+    public void FillingEmptySlotsIsAJoin()
+    {
+        string[] current = ["A", "B", string.Empty, string.Empty];
+        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, ["a ", "B", "C", string.Empty]));
+        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "B", string.Empty, "C"]));
+        Assert.IsTrue(MatrixLayout.OnlyFillsEmptySlots(current, current));
+    }
+
+    [TestMethod]
+    public void MovingRemovingOrResizingIsNotAJoin()
+    {
+        string[] current = ["A", "B", string.Empty, string.Empty];
+        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["B", "A", string.Empty, string.Empty]));
+        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", string.Empty, string.Empty, string.Empty]));
+        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "C", string.Empty, string.Empty]));
+        Assert.IsFalse(MatrixLayout.OnlyFillsEmptySlots(current, ["A", "B", string.Empty]));
+    }
 }
