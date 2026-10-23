@@ -4,6 +4,7 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 
@@ -24,24 +25,39 @@ internal static class PeerAddress
         address = null;
         text = text?.Trim();
 
-        if (string.IsNullOrEmpty(text) || !IPAddress.TryParse(text, out IPAddress parsed))
+        if (string.IsNullOrEmpty(text))
         {
             return false;
         }
 
-        bool literal = parsed.AddressFamily switch
+        if (!text.Contains(':'))
         {
-            AddressFamily.InterNetwork => text.Split('.').Length == 4,
-            AddressFamily.InterNetworkV6 => text.Contains(':'),
-            _ => false,
-        };
+            string[] parts = text.Split('.');
+            if (parts.Length != 4)
+            {
+                return false;
+            }
 
-        if (literal)
-        {
-            address = Normalize(parsed);
+            byte[] octets = new byte[4];
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (!byte.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out octets[i]))
+                {
+                    return false;
+                }
+            }
+
+            address = new IPAddress(octets);
+            return true;
         }
 
-        return literal;
+        if (IPAddress.TryParse(text, out IPAddress parsed) && parsed.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            address = Normalize(parsed);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

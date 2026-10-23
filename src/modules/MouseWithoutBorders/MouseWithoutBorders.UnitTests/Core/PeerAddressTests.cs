@@ -17,6 +17,8 @@ public sealed class PeerAddressTests
     [DataRow("192.168.1.20", "192.168.1.20")]
     [DataRow(" 10.0.0.5 ", "10.0.0.5")]
     [DataRow("169.254.10.2", "169.254.10.2")]
+    [DataRow("192.168.001.010", "192.168.1.10")]
+    [DataRow("010.000.000.009", "10.0.0.9")]
     [DataRow("fe80::1", "fe80::1")]
     [DataRow("FE80::1%12", "fe80::1%12")]
     [DataRow("2001:db8::7", "2001:db8::7")]
@@ -38,6 +40,8 @@ public sealed class PeerAddressTests
     [DataRow("10.0.1")]
     [DataRow("192.168.1.256")]
     [DataRow("laptop.local")]
+    [DataRow("192.168.1.20:15101")]
+    [DataRow("0xC0.0xA8.1.20")]
     public void TreatsEverythingElseAsAName(string text)
     {
         Assert.IsFalse(PeerAddress.TryParseLiteral(text, out IPAddress address));
