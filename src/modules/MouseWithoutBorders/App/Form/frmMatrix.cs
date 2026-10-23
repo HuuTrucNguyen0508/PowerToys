@@ -46,6 +46,8 @@ namespace MouseWithoutBorders
 #pragma warning restore CA2213
         private bool formShown;
         private int formOrgHeight;
+        private int formOrgWidth;
+        private int matrixOrgWidth;
         private bool matrixOneRow;
 
         internal FrmMatrix()
@@ -58,6 +60,8 @@ namespace MouseWithoutBorders
             toolTip.ToolTipTitle = Application.ProductName;
             toolTipManual.ToolTipTitle = Application.ProductName;
             labelExitMM.Text = "Exit the application, Ctrl+Alt+Shift+:";
+            radioButtonNum.Text = $"&1 \u2026 {Math.Min(9, (int)MachineStuff.MAX_MACHINE)}";
+            radioButtonF1.Text = $"&F1 \u2026 F{Math.Min(12, (int)MachineStuff.MAX_MACHINE)}";
             textBoxMachineName2IP.Text = Setting.Values.Name2IP;
         }
 
@@ -141,6 +145,8 @@ namespace MouseWithoutBorders
         private void InitAll()
         {
             formOrgHeight = Height;
+            formOrgWidth = Width;
+            matrixOrgWidth = groupBoxMachineMatrix.Width;
             matrixOneRow = Setting.Values.MatrixOneRow;
             CreateMachines();
             LoadSettingsToUI();
@@ -549,14 +555,40 @@ namespace MouseWithoutBorders
 
         private void ArrangeMachines()
         {
-            Height = matrixOneRow ? formOrgHeight : formOrgHeight + 60;
-            int dx = (groupBoxMachineMatrix.Width - 40) / 4;
-            int yOffset = groupBoxMachineMatrix.Height / 3;
+            int columns = MatrixLayout.Columns(MachineStuff.MAX_MACHINE, matrixOneRow, MachineStuff.MATRIX_COLUMNS);
+            int rows = (MachineStuff.MAX_MACHINE + columns - 1) / columns;
+            int tile = machines[0].Width;
+            int rowStep = tile + 2;
+
+            // Horizontal spacing of the original layout: four tiles across the group box.
+            int dx = (matrixOrgWidth - 40) / 4;
+
+            // A row of more than four tiles widens the window, but not past the screen; the tiles overlap if it still doesn't fit.
+            Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+            int extraWidth = Math.Max(0, 44 + ((columns - 1) * dx) + tile - matrixOrgWidth);
+            extraWidth = Math.Min(extraWidth, Math.Max(0, workingArea.Width - formOrgWidth));
+            Width = formOrgWidth + extraWidth;
+            groupBoxMachineMatrix.Width = matrixOrgWidth + extraWidth;
+
+            if (Right > workingArea.Right)
+            {
+                Left = Math.Max(workingArea.Left, workingArea.Right - Width);
+            }
+
+            if (columns > 1)
+            {
+                dx = Math.Min(dx, (groupBoxMachineMatrix.Width - 44 - tile) / (columns - 1));
+            }
+
+            // One row keeps the original height; each row past the second adds one tile's height to the original two-row layout.
+            Height = rows == 1 ? formOrgHeight : formOrgHeight + 60 + ((rows - 2) * rowStep);
+            int yOffset = rows == 1 ? groupBoxMachineMatrix.Height / 3 : (groupBoxMachineMatrix.Height - ((rows - 2) * rowStep)) / 3 / 2;
+            int xOffset = 22 + ((Math.Max(4, columns) - columns) * dx / 2);
 
             for (int i = 0; i < MachineStuff.MAX_MACHINE; i++)
             {
-                machines[i].Left = matrixOneRow ? 22 + (i * dx) : 22 + dx + ((i % 2) * dx);
-                machines[i].Top = matrixOneRow ? yOffset : (yOffset / 2) + (i / 2 * (machines[i].Width + 2));
+                machines[i].Left = xOffset + (i % columns * dx);
+                machines[i].Top = yOffset + (i / columns * rowStep);
                 machines[i].Visible = true;
             }
         }

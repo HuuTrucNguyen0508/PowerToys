@@ -863,7 +863,7 @@ namespace MouseWithoutBorders
             this.radioButtonNum.Size = new System.Drawing.Size(67, 17);
             this.radioButtonNum.TabIndex = 201;
             this.radioButtonNum.TabStop = true;
-            this.radioButtonNum.Text = "&1, 2, 3, 4";
+            this.radioButtonNum.Text = "&1 … 9";
             this.radioButtonNum.UseVisualStyleBackColor = true;
             this.radioButtonNum.CheckedChanged += new System.EventHandler(this.RadioButton_CheckedChanged);
             // 
@@ -875,7 +875,7 @@ namespace MouseWithoutBorders
             this.radioButtonF1.Size = new System.Drawing.Size(91, 17);
             this.radioButtonF1.TabIndex = 200;
             this.radioButtonF1.TabStop = true;
-            this.radioButtonF1.Text = "&F1, F2, F3, F4";
+            this.radioButtonF1.Text = "&F1 … F9";
             this.radioButtonF1.UseVisualStyleBackColor = true;
             this.radioButtonF1.CheckedChanged += new System.EventHandler(this.RadioButton_CheckedChanged);
             // 
