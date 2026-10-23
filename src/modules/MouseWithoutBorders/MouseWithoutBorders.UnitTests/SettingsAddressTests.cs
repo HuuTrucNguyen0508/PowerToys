@@ -113,4 +113,30 @@ public sealed class SettingsAddressTests
         CollectionAssert.AreEqual(expected, saved.Properties.MachineMatrixString);
         Assert.AreEqual(settings.Name2IP, saved.Properties.Name2IP.Value);
     }
+
+    [TestMethod]
+    public void ExternalEditCanBeRevertedToOurLastSavedValues()
+    {
+        var initial = new MouseWithoutBordersSettings();
+        initial.Properties.SecurityKey.Value = "TEST-KEY";
+        var settings = CreateSettings(initial);
+        MouseWithoutBordersSettings saved = null!;
+        settings.SaveCurrentSettings(snapshot => saved = snapshot);
+        var edited = new MouseWithoutBordersSettings();
+        edited.Properties.SecurityKey.Value = "TEST-KEY";
+        edited.Properties.ShowClipNetStatus = !saved.Properties.ShowClipNetStatus;
+        var previousKey = Encryption.MyKey;
+        try
+        {
+            Encryption.MyKey = "TEST-KEY";
+            settings.ApplyLoadedSettings(edited, () => { }, () => { }, () => { }, () => { });
+            Assert.AreEqual(edited.Properties.ShowClipNetStatus, settings.ShowClipNetStatus);
+            settings.ApplyLoadedSettings(saved, () => { }, () => { }, () => { }, () => { });
+            Assert.AreEqual(saved.Properties.ShowClipNetStatus, settings.ShowClipNetStatus);
+        }
+        finally
+        {
+            Encryption.MyKey = previousKey;
+        }
+    }
 }

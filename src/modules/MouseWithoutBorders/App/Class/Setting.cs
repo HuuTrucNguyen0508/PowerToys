@@ -60,9 +60,9 @@ namespace MouseWithoutBorders.Class
         internal const string ModuleFolderName = MouseWithoutBordersSettings.ModuleName;
 #endif
 
-        internal bool Changed;
-
         private static readonly System.Text.Json.JsonSerializerOptions SnapshotSerializerOptions = new() { IncludeFields = true };
+
+        internal bool Changed;
 
         private readonly SettingsUtils _settingsUtils;
         private readonly Lock _loadingSettingsLock = new Lock();
@@ -166,6 +166,7 @@ namespace MouseWithoutBorders.Class
                 }
 
                 _settings = settings;
+                _lastSavedSettings = null;
                 _properties = settings.Properties;
                 if (!Name2IpIsGpoConfigured)
                 {
