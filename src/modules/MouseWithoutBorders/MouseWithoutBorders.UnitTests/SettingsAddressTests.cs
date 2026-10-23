@@ -124,15 +124,15 @@ public sealed class SettingsAddressTests
         settings.SaveCurrentSettings(snapshot => saved = snapshot);
         var edited = new MouseWithoutBordersSettings();
         edited.Properties.SecurityKey.Value = "TEST-KEY";
-        edited.Properties.ShowClipNetStatus = !saved.Properties.ShowClipNetStatus;
+        edited.Properties.ShowClipboardAndNetworkStatusMessages = !saved.Properties.ShowClipboardAndNetworkStatusMessages;
         var previousKey = Encryption.MyKey;
         try
         {
             Encryption.MyKey = "TEST-KEY";
             settings.ApplyLoadedSettings(edited, () => { }, () => { }, () => { }, () => { });
-            Assert.AreEqual(edited.Properties.ShowClipNetStatus, settings.ShowClipNetStatus);
+            Assert.AreEqual(edited.Properties.ShowClipboardAndNetworkStatusMessages, settings.ShowClipNetStatus);
             settings.ApplyLoadedSettings(saved, () => { }, () => { }, () => { }, () => { });
-            Assert.AreEqual(saved.Properties.ShowClipNetStatus, settings.ShowClipNetStatus);
+            Assert.AreEqual(saved.Properties.ShowClipboardAndNetworkStatusMessages, settings.ShowClipNetStatus);
         }
         finally
         {
