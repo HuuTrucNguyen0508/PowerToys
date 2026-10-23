@@ -1,6 +1,8 @@
-# Builds the mwb-x9 Mouse Without Borders fork on Windows, runs its unit tests,
-# and uploads PowerToys.MouseWithoutBorders.dll for deployment (see
-# src/modules/MouseWithoutBorders/MWB-X9.md).
+# Builds the mwb-x9 Mouse Without Borders fork on Windows (see
+# src/modules/MouseWithoutBorders/MWB-X9.md):
+# - build: runs the unit tests and uploads PowerToys.MouseWithoutBorders.dll for a PowerToys install;
+# - standalone: builds the app, service and helper with /p:MwbStandalone=true, packages them with the
+#   install scripts as MWB-X9-<version>-x64.zip, and tests install, start and uninstall on the runner.
 name: mwb-x9 build
 
 on:
@@ -82,6 +84,14 @@ jobs:
           "Commit: $env:GITHUB_SHA" | Tee-Object -Append out/BUILDINFO.txt
           (Get-FileHash out/PowerToys.MouseWithoutBorders.dll -Algorithm SHA256).Hash | Tee-Object out/PowerToys.MouseWithoutBorders.dll.sha256
 
+      - name: Check the PowerToys build kept the PowerToys service name
+        shell: pwsh
+        run: |
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path out/PowerToys.MouseWithoutBorders.dll))
+          $text = [Text.Encoding]::Unicode.GetString($bytes) + [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
+          if (-not $text.Contains('PowerToys.MWB.Service')) { throw 'PowerToys.MWB.Service is missing from the PowerToys build.' }
+          if ($text.Contains('MWBX9.Service')) { throw 'The PowerToys build contains the standalone service name.' }
+
       - uses: actions/upload-artifact@v4
         with:
           name: mwb-x9-dll
@@ -91,4 +101,184 @@ jobs:
         if: always()
         with:
           name: mwb-x9-build-logs
+          path: artifacts/logs/
+
+  standalone:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      MWB_VERSION: ${{ inputs.version || '0.102.0.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: NuGet/setup-nuget@v2
+
+      - name: Restore native dependencies
+        shell: pwsh
+        run: |
+          $configs = @(
+            'src/common/GPOWrapper/packages.config',
+            'src/common/interop/packages.config',
+            'src/common/logger/packages.config',
+            'src/common/SettingsAPI/packages.config',
+            'src/modules/ZoomIt/ZoomItSettingsInterop/packages.config'
+          )
+          foreach ($config in $configs) {
+            nuget restore $config -PackagesDirectory packages -NonInteractive
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      # The app doesn't reference the service or the helper, so build all three.
+      - name: Build standalone app, service and helper
+        shell: pwsh
+        run: |
+          $projects = @(
+            'App/MouseWithoutBorders.csproj',
+            'App/Service/MouseWithoutBordersService.csproj',
+            'App/Helper/MouseWithoutBordersHelper.csproj'
+          )
+          foreach ($project in $projects) {
+            $name = [IO.Path]::GetFileNameWithoutExtension($project)
+            msbuild "src/modules/MouseWithoutBorders/$project" `
+              /restore /m /nologo /v:minimal `
+              /p:Platform=x64 /p:Configuration=Release `
+              /p:RestorePackagesConfig=true `
+              /p:MwbStandalone=true `
+              "/p:Version=$env:MWB_VERSION" `
+              "/bl:artifacts/logs/standalone-$name.binlog"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Package
+        shell: pwsh
+        run: ./src/modules/MouseWithoutBorders/Standalone/New-MWBX9Package.ps1 -Version $env:MWB_VERSION -OutputDir out
+
+      - name: Check the package is a standalone build
+        shell: pwsh
+        run: |
+          $bin = "out/MWB-X9-$env:MWB_VERSION-x64/bin"
+          foreach ($dll in 'PowerToys.MouseWithoutBorders.dll', 'PowerToys.MouseWithoutBordersService.dll') {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path "$bin/$dll"))
+            $text = [Text.Encoding]::Unicode.GetString($bytes) + [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
+            if (-not $text.Contains('MWBX9.Service')) { throw "$dll doesn't contain MWBX9.Service." }
+            if ($text.Contains('PowerToys.MWB.Service')) { throw "$dll still contains PowerToys.MWB.Service." }
+            $product = (Get-Item "$bin/$dll").VersionInfo.ProductName
+            if ($product -ne 'MWB-X9') { throw "$dll has product name '$product'." }
+            "$dll`: MWBX9.Service, product $product"
+          }
+
+      # Windows PowerShell 5.1, as on the laptops. The runner is elevated.
+      - name: Test install, start and uninstall
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert($condition, $message) { if (-not $condition) { throw "FAILED: $message" } else { "ok: $message" } }
+
+          $test = Join-Path $env:RUNNER_TEMP 'mwb-x9-test'
+          Expand-Archive -Path "out/MWB-X9-$env:MWB_VERSION-x64.zip" -DestinationPath $test -Force
+          $pkg = Join-Path $test "MWB-X9-$env:MWB_VERSION-x64"
+          $dir = Join-Path $env:ProgramFiles 'MWB-X9'
+
+          # Refuses to mirror into a folder that isn't an MWB-X9 install.
+          $other = Join-Path $env:RUNNER_TEMP 'not-mwb'
+          New-Item -ItemType Directory -Force $other | Out-Null
+          Set-Content (Join-Path $other 'keep.txt') 'keep'
+          $refused = $false
+          try { & "$pkg\Install-MWBX9.ps1" -InstallDir $other } catch { $refused = $true; "Refused as expected: $_" }
+          Assert ($refused -and (Test-Path (Join-Path $other 'keep.txt'))) 'install refuses a non-empty foreign folder'
+
+          & "$pkg\Install-MWBX9.ps1" -Autostart
+          & "$pkg\Install-MWBX9.ps1" -Autostart
+
+          $user = (Get-CimInstance Win32_ComputerSystem).UserName
+          if (-not $user) { $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name }
+          $sid = (New-Object Security.Principal.NTAccount($user)).Translate([Security.Principal.SecurityIdentifier]).Value
+          "Target user: $user ($sid)"
+
+          $svc = Get-CimInstance Win32_Service -Filter "Name = 'MWBX9.Service'"
+          "PathName: $($svc.PathName)"
+          Assert ($svc.StartMode -eq 'Manual') 'service is demand start'
+          Assert ($svc.StartName -eq 'LocalSystem') 'service runs as LocalSystem'
+          Assert ($svc.ServiceType -eq 'Own Process') 'service is an own-process service'
+          Assert ($svc.PathName.StartsWith("`"$dir\PowerToys.MouseWithoutBordersService.exe`" ")) 'service binPath is the quoted service exe plus a path'
+          $sd = (& sc.exe sdshow MWBX9.Service) -join ''
+          "SDDL: $sd"
+          Assert ($sd.Contains("(A;;RPWPDTLO;;;$sid)")) 'DACL lets the target user start the service'
+          Assert ($sd.Contains('(A;;CCLCSWLOCRRC;;;IU)')) 'DACL matches generateSecurityDescriptor'
+
+          $rule = Get-NetFirewallRule -Name 'MWB-X9'
+          $ports = $rule | Get-NetFirewallPortFilter
+          $addresses = $rule | Get-NetFirewallAddressFilter
+          $program = ($rule | Get-NetFirewallApplicationFilter).Program
+          "Firewall: $($rule.Profile) $($ports.Protocol) $($ports.LocalPort) from $($addresses.RemoteAddress) for $program"
+          Assert (@(Get-NetFirewallRule -DisplayName 'MWB-X9').Count -eq 1) 'exactly one firewall rule after two installs'
+          Assert ($ports.Protocol -eq 'TCP' -and $ports.LocalPort -eq '15100-15101') 'firewall opens TCP 15100-15101'
+          Assert ($addresses.RemoteAddress -eq 'LocalSubnet') 'firewall allows the local subnet only'
+          Assert ("$($rule.Profile)" -eq 'Domain, Private') 'firewall covers Domain and Private'
+          Assert ($program -eq "$dir\PowerToys.MouseWithoutBorders.exe") 'firewall rule is for the app exe'
+
+          $startMenu = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'MWB-X9.lnk'
+          Assert (Test-Path $startMenu) 'Start Menu shortcut exists'
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenu)
+          Assert ($lnk.TargetPath -eq "$dir\PowerToys.MouseWithoutBorders.exe" -and $lnk.Arguments -eq 'UseService') 'shortcut runs the app with UseService'
+          $startup = @(Get-ChildItem -Path 'C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\MWB-X9.lnk' -ErrorAction SilentlyContinue)
+          Assert ($startup.Count -eq 1) "one logon shortcut: $($startup.FullName)"
+
+          # Start without service mode, as the runner user.
+          $data = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\MWB-X9'
+          $app = Start-Process -FilePath "$dir\PowerToys.MouseWithoutBorders.exe" -PassThru
+          Start-Sleep -Seconds 30
+          Get-CimInstance Win32_Process -Filter "Name LIKE 'PowerToys.MouseWithoutBorders%'" | Format-Table ProcessId, Name, CommandLine -AutoSize | Out-String -Width 300
+          Get-NetTCPConnection -State Listen -LocalPort 15100, 15101 -ErrorAction SilentlyContinue | Format-Table LocalAddress, LocalPort, OwningProcess | Out-String
+          Assert (-not $app.HasExited) 'app is still running after 30 s'
+          Assert (Test-Path (Join-Path $data 'settings.json')) "settings.json is in $data"
+          $settings = Get-Content (Join-Path $data 'settings.json') -Raw | ConvertFrom-Json
+          Assert ($settings.properties.FirstRun.value -eq $true) 'a fresh install opens the setup wizard'
+          Assert (Test-Path (Join-Path $data 'Logs')) 'logs are in the MWB-X9 folder'
+          Assert (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\MouseWithoutBorders'))) 'the PowerToys MWB folder is untouched'
+          Get-ChildItem (Join-Path $data 'Logs') -Recurse -File | ForEach-Object { "--- $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
+          Stop-Process -Id $app.Id -Force
+
+          # Service mode. The runner may have no interactive console session, so only report what happens.
+          try {
+            Start-Service -Name 'MWBX9.Service'
+          } catch {
+            "Start-Service: $_"
+          }
+          Start-Sleep -Seconds 20
+          "Service status: $((Get-Service 'MWBX9.Service').Status)"
+          Get-CimInstance Win32_Process -Filter "Name LIKE 'PowerToys.MouseWithoutBorders%'" | ForEach-Object {
+            $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
+            "{0} {1} session {2} owner {3}\{4}: {5}" -f $_.ProcessId, $_.Name, $_.SessionId, $owner.Domain, $owner.User, $_.CommandLine
+          }
+
+          & "$dir\Uninstall-MWBX9.ps1" -RemoveData
+          & "$pkg\Uninstall-MWBX9.ps1" -RemoveData
+
+          Assert (-not (Get-Service -Name 'MWBX9.Service' -ErrorAction SilentlyContinue)) 'service is gone'
+          Assert (-not (Get-NetFirewallRule -Name 'MWB-X9' -ErrorAction SilentlyContinue)) 'firewall rule is gone'
+          Assert (-not (Test-Path $dir)) 'install folder is gone'
+          Assert (-not (Test-Path $startMenu)) 'Start Menu shortcut is gone'
+          Assert (@(Get-ChildItem -Path 'C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\MWB-X9.lnk' -ErrorAction SilentlyContinue).Count -eq 0) 'logon shortcut is gone'
+          Assert (-not (Test-Path $data)) 'user data is gone'
+          Assert (-not (Test-Path "$env:SystemRoot\System32\config\systemprofile\AppData\Local\Microsoft\PowerToys\MWB-X9")) 'SYSTEM profile data is gone'
+          Assert (-not (Get-Process -Name 'PowerToys.MouseWithoutBorders*' -ErrorAction SilentlyContinue)) 'no MWB processes are left'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MWB-X9-${{ env.MWB_VERSION }}-x64
+          path: |
+            out/MWB-X9-*-x64.zip
+            out/MWB-X9-*-x64.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mwb-x9-standalone-build-logs
           path: artifacts/logs/
