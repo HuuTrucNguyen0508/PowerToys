@@ -34,6 +34,23 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
+      - uses: NuGet/setup-nuget@v2
+
+      - name: Restore native dependencies
+        shell: pwsh
+        run: |
+          $configs = @(
+            'src/common/GPOWrapper/packages.config',
+            'src/common/interop/packages.config',
+            'src/common/logger/packages.config',
+            'src/common/SettingsAPI/packages.config',
+            'src/modules/ZoomIt/ZoomItSettingsInterop/packages.config'
+          )
+          foreach ($config in $configs) {
+            nuget restore $config -PackagesDirectory packages -NonInteractive
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       - name: Build MWB app and unit tests
         shell: pwsh
         run: |
