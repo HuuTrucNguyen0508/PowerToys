@@ -7,12 +7,15 @@ namespace MouseWithoutBorders.Core;
 internal sealed class MatrixPacketBuffer(int slotCount)
 {
     private string[] slots;
+    private uint[] slotAddresses;
     private int nextSlot;
     private int layoutFlags;
 
-    internal bool TryAdd(int slot, int senderSlotCount, int flags, string name, out string[] completed)
+    // address is the slot's Matrix packet IPv4 field, kept as received (see PeerAddress).
+    internal bool TryAdd(int slot, int senderSlotCount, int flags, string name, uint address, out string[] completed, out uint[] addresses)
     {
         completed = null;
+        addresses = null;
 
         if (senderSlotCount != slotCount || slot < 1 || slot > slotCount)
         {
@@ -23,6 +26,7 @@ internal sealed class MatrixPacketBuffer(int slotCount)
         if (slot == 1)
         {
             slots = MatrixLayout.CreateEmpty(slotCount);
+            slotAddresses = new uint[slotCount];
             nextSlot = 1;
             layoutFlags = flags;
         }
@@ -34,6 +38,7 @@ internal sealed class MatrixPacketBuffer(int slotCount)
         }
 
         slots[slot - 1] = name;
+        slotAddresses[slot - 1] = address;
         nextSlot++;
 
         if (slot != slotCount)
@@ -42,7 +47,9 @@ internal sealed class MatrixPacketBuffer(int slotCount)
         }
 
         completed = slots;
+        addresses = slotAddresses;
         slots = null;
+        slotAddresses = null;
         return true;
     }
 }

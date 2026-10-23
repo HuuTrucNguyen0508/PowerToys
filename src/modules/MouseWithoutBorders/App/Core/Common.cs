@@ -1161,21 +1161,51 @@ internal static class Common
         return false;
     }
 
-    internal static IPAddress GetConnectedClientSocketIPAddressFor(string machineName)
+    // Where a connected machine is: the address our client socket reached, or else the address its connection to us came from.
+    internal static IPAddress GetConnectedIPAddressFor(string machineName)
     {
         SocketStuff sk = Common.Sk;
+        IPAddress fromServerSocket = null;
 
         if (sk != null)
         {
             lock (sk.TcpSocketsLock)
             {
-                return sk.TcpSockets.FirstOrDefault(t => t != null && t.IsClient && t.Status == SocketStatus.Connected
-                        && t.Address != null && t.MachineName.Equals(machineName, StringComparison.OrdinalIgnoreCase))
-                        ?.Address;
+                foreach (TcpSk t in sk.TcpSockets)
+                {
+                    if (t == null || t.Status != SocketStatus.Connected || t.BackingSocket == null
+                        || !string.Equals(t.MachineName, machineName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (t.IsClient && t.Address != null)
+                    {
+                        return PeerAddress.Normalize(t.Address);
+                    }
+
+                    fromServerSocket ??= GetRemoteAddress(t.BackingSocket);
+                }
             }
         }
 
-        return null;
+        return fromServerSocket;
+    }
+
+    internal static IPAddress GetRemoteAddress(Socket s)
+    {
+        try
+        {
+            return PeerAddress.Normalize((s?.RemoteEndPoint as IPEndPoint)?.Address);
+        }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (SocketException)
+        {
+            return null;
+        }
     }
 
     internal static bool IsConnectingByAClientSocketTo(string machineName, IPAddress ip)

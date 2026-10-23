@@ -62,7 +62,7 @@ namespace MouseWithoutBorders
             labelExitMM.Text = "Exit the application, Ctrl+Alt+Shift+:";
             radioButtonNum.Text = $"&1 \u2026 {Math.Min(9, (int)MachineStuff.MAX_MACHINE)}";
             radioButtonF1.Text = $"&F1 \u2026 F{Math.Min(12, (int)MachineStuff.MAX_MACHINE)}";
-            textBoxMachineName2IP.Text = Setting.Values.Name2IP;
+            textBoxMachineName2IP.Text = name2IpShown = Setting.Values.Name2IP;
         }
 
         private void ButtonCancel_Click(object sender, EventArgs e)
@@ -377,6 +377,9 @@ namespace MouseWithoutBorders
         private int helperTimerCounter;
         private bool showInvalidKeyMessage;
 
+        // Name2IP as last shown in, or taken from, the IP mappings text box.
+        private string name2IpShown;
+
         private void HelperTimer_Tick(object sender, EventArgs e)
         {
             string keyNotMatchedMachines = string.Empty;
@@ -408,9 +411,14 @@ namespace MouseWithoutBorders
             {
                 comboBoxEasyMouseOption.Text = ((EasyMouseOption)Setting.Values.EasyMouse).ToString();
 
-                if (!textBoxMachineName2IP.Text.Equals(Setting.Values.Name2IP, StringComparison.OrdinalIgnoreCase))
+                // Save the user's edits, and show addresses learned from the network while the window is open.
+                if (!textBoxMachineName2IP.Text.Equals(name2IpShown, StringComparison.Ordinal))
                 {
-                    Setting.Values.Name2IP = textBoxMachineName2IP.Text;
+                    Setting.Values.Name2IP = name2IpShown = textBoxMachineName2IP.Text;
+                }
+                else if (!string.Equals(Setting.Values.Name2IP, name2IpShown, StringComparison.Ordinal))
+                {
+                    textBoxMachineName2IP.Text = name2IpShown = Setting.Values.Name2IP;
                 }
 
                 // 2 times

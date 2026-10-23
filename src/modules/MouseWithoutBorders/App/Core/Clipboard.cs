@@ -1077,7 +1077,7 @@ internal static class Clipboard
         {
             Common.DoSomethingInUIThread(() => Common.MainForm.ChangeIcon(Common.ICON_SMALL_CLIPBOARD));
 
-            System.Net.IPAddress ip = Common.GetConnectedClientSocketIPAddressFor(remoteMachine);
+            System.Net.IPAddress ip = Common.GetConnectedIPAddressFor(remoteMachine);
             Logger.LogDebug($"{nameof(ConnectToRemoteClipboardSocket)}Connecting to {remoteMachine}:{ip}:{sk.TcpPort}...");
 
             if (ip != null)

@@ -903,48 +903,34 @@ namespace MouseWithoutBorders.Class
 
                 Logger.LogDebug("Connecting to: " + machineName);
 
-                if (!string.IsNullOrEmpty(Setting.Values.Name2IP))
+                // Policy mappings, then the user's (which include learned lines), then learned lines kept in memory.
+                string combinedName2ipList = Setting.Values.Name2IpPolicyList + Separator[0] + Setting.Values.Name2IP + Separator[0] + MachineStuff.LearnedAddresses;
+
+                foreach (IPAddress ip in Name2IpMap.AddressesFor(combinedName2ipList, machineName))
                 {
-                    string combinedName2ipList = Setting.Values.Name2IpPolicyList + Separator + Setting.Values.Name2IP;
-                    string[] name2ip = combinedName2ipList.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
-                    string[] nameNip;
+                    validatedAddresses.Add(ip);
+                    validAddressesSt += "[" + ip.ToString() + "]";
+                }
 
-                    if (name2ip != null)
+                if (validatedAddresses.Count > 0)
+                {
+                    useName2IP = true;
+
+                    Logger.LogDebug("Using both user-defined Name-to-IP mappings and DNS result for " + machineName);
+
+                    Common.ShowToolTip("Using both user-defined Name-to-IP mappings and DNS result for " + machineName, 3000, ToolTipIcon.Info, false);
+
+                    if (!CheckForSameSubNet(validatedAddresses, machineName))
                     {
-                        foreach (string st in name2ip)
-                        {
-                            nameNip = st.Split(BlankSeparator, StringSplitOptions.RemoveEmptyEntries);
-
-                            if (nameNip != null && nameNip.Length >= 2 && nameNip[0].Trim().Equals(machineName, StringComparison.OrdinalIgnoreCase)
-                                && IPAddress.TryParse(nameNip[1].Trim(), out IPAddress ip) && !validAddressesSt.Contains("[" + ip.ToString() + "]")
-                                )
-                            {
-                                validatedAddresses.Add(ip);
-                                validAddressesSt += "[" + ip.ToString() + "]";
-                            }
-                        }
+                        return;
                     }
 
-                    if (validatedAddresses.Count > 0)
+                    foreach (IPAddress vip in validatedAddresses)
                     {
-                        useName2IP = true;
-
-                        Logger.LogDebug("Using both user-defined Name-to-IP mappings and DNS result for " + machineName);
-
-                        Common.ShowToolTip("Using both user-defined Name-to-IP mappings and DNS result for " + machineName, 3000, ToolTipIcon.Info, false);
-
-                        if (!CheckForSameSubNet(validatedAddresses, machineName))
-                        {
-                            return;
-                        }
-
-                        foreach (IPAddress vip in validatedAddresses)
-                        {
-                            StartNewTcpClientThread(machineName, vip);
-                        }
-
-                        validatedAddresses.Clear();
+                        StartNewTcpClientThread(machineName, vip);
                     }
+
+                    validatedAddresses.Clear();
                 }
 
                 try
@@ -957,7 +943,11 @@ namespace MouseWithoutBorders.Class
 
                     UpdateTcpSockets(dummyTcp, SocketStatus.Timeout);
 
-                    Common.ShowToolTip(e.Message + ": " + machineName, 10000, ToolTipIcon.Warning, Setting.Values.ShowClipNetStatus);
+                    // A mapped machine doesn't need DNS, which is normal on a closed network.
+                    if (!useName2IP)
+                    {
+                        Common.ShowToolTip(e.Message + ": " + machineName, 10000, ToolTipIcon.Warning, Setting.Values.ShowClipNetStatus);
+                    }
 
                     Logger.Log($"{nameof(StartNewTcpClient)}.{nameof(Dns.GetHostEntry)}: {e.Message}");
                 }
@@ -1258,7 +1248,6 @@ namespace MouseWithoutBorders.Class
 
         private long lastRemoteMachineID;
         internal static readonly string[] Separator = new string[] { "\r\n" };
-        internal static readonly char[] BlankSeparator = new char[] { ' ' };
 
         private void MainTCPRoutine(TcpSk tcp, string machineName, bool isClient)
         {
@@ -1451,6 +1440,9 @@ namespace MouseWithoutBorders.Class
                                     currentTcp.Status = SocketStatus.Connected;
                                     UpdateTcpSockets(currentTcp, SocketStatus.Connected);
                                     Logger.LogDebug("))))))))))))))) Machine got trusted: " + remoteMachine + ":" + strIP + ", Is client: " + isClient);
+
+                                    // Remember where it is, so we can connect back to it without DNS.
+                                    _ = MachineStuff.LearnAddresses(new[] { (remoteMachine, Common.GetRemoteAddress(currentSocket)) });
 
                                     if (Math.Abs(Common.GetTick() - Common.LastReconnectByHotKeyTime) < 5000)
                                     {

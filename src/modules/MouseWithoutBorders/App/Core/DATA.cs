@@ -65,6 +65,11 @@ internal sealed class DATA
     [FieldOffset(sizeof(PackageType) + (3 * sizeof(uint)))]
     internal int MatrixSlotCount;
 
+    // IPv4 address the sender sees for the machine in this Matrix packet's slot, encoded by PeerAddress.ToPacketValue.
+    // 0 means unknown, and official builds leave it at 0. IPv6 doesn't fit: bytes 20-31 are all that is free before the name.
+    [FieldOffset(sizeof(PackageType) + (4 * sizeof(uint)))]
+    internal uint MatrixSlotIPv4;
+
     [FieldOffset(sizeof(PackageType) + (7 * sizeof(uint)))]
     private long machineNameP1;
 

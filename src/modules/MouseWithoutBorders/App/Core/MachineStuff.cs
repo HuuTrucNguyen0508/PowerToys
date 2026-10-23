@@ -3,9 +3,11 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -726,6 +728,10 @@ internal static class MachineStuff
                 package.MachineName = matrix[i];
                 package.MatrixSlotCount = matrix.Length;
 
+                // Tell the others where each machine is, so they can reach it without DNS. Our own slot stays 0:
+                // receivers take our address from the connection the packet arrives on.
+                package.MatrixSlotIPv4 = string.IsNullOrWhiteSpace(matrix[i]) ? 0 : PeerAddress.ToPacketValue(Common.GetConnectedIPAddressFor(matrix[i]));
+
                 package.Src = (ID)(i + 1);
                 package.Des = ID.ALL;
 
@@ -754,10 +760,20 @@ internal static class MachineStuff
 
         lock (StagedMatrixLock)
         {
-            if (!tcp.MatrixBuffer.TryAdd((int)i, slotCount, (int)package.Type, matrixIncludedMachine, out string[] received))
+            if (!tcp.MatrixBuffer.TryAdd((int)i, slotCount, (int)package.Type, matrixIncludedMachine, package.MatrixSlotIPv4, out string[] received, out uint[] addresses))
             {
                 return;
             }
+
+            List<(string Name, IPAddress Address)> found = new();
+            for (int slot = 0; slot < received.Length; slot++)
+            {
+                found.Add((received[slot], PeerAddress.FromPacketValue(addresses[slot])));
+            }
+
+            // The sender leaves its own slot at 0; the connection says where it is.
+            found.Add((tcp.MachineName, Common.GetRemoteAddress(tcp.BackingSocket)));
+            bool addressesChanged = LearnAddresses(found);
 
             bool circle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
             bool oneRow = (package.Type & PackageType.MatrixTwoRowFlag) == 0;
@@ -765,24 +781,94 @@ internal static class MachineStuff
             string[] current = MachineMatrix;
             if (Setting.Values.MatrixCircle == circle && Setting.Values.MatrixOneRow == oneRow && received.SequenceEqual(current))
             {
-                return;
+                // Same layout, but new addresses may reach machines we couldn't connect to.
+                if (!addressesChanged)
+                {
+                    return;
+                }
             }
-
-            // A join only fills empty slots. Don't arm the one-time full reconnect for it: a duplicate socket that a
-            // peer closes during the join would otherwise reopen every connection on this machine.
-            if (!MatrixLayout.OnlyFillsEmptySlots(current, received))
+            else
             {
-                InitAndCleanup.ReopenSocketDueToReadError = true;
+                ApplyReceivedMatrix(current, received, circle, oneRow);
             }
-
-            Setting.Values.MatrixCircle = circle;
-            Setting.Values.MatrixOneRow = oneRow;
-            MachineMatrix = received;
-            Logger.LogDebug($"MachineMatrix received: [{string.Join(",", received)}]");
-            Setting.Values.Changed = true;
         }
 
         UpdateClientSockets("UpdateMachineMatrix");
+    }
+
+    private static void ApplyReceivedMatrix(string[] current, string[] received, bool circle, bool oneRow)
+    {
+        // A join only fills empty slots. Don't arm the one-time full reconnect for it: a duplicate socket that a
+        // peer closes during the join would otherwise reopen every connection on this machine.
+        if (!MatrixLayout.OnlyFillsEmptySlots(current, received))
+        {
+            InitAndCleanup.ReopenSocketDueToReadError = true;
+        }
+
+        Setting.Values.MatrixCircle = circle;
+        Setting.Values.MatrixOneRow = oneRow;
+        MachineMatrix = received;
+        Logger.LogDebug($"MachineMatrix received: [{string.Join(",", received)}]");
+        Setting.Values.Changed = true;
+    }
+
+    private static readonly Lock LearnedAddressesLock = new();
+    private static string learnedAddresses = string.Empty;
+
+    // Learned Name2IP lines. They are also written to Name2IP when policy allows, but this copy keeps working when policy
+    // blocks Name2IP or a settings window writes back an older Name2IP.
+    internal static string LearnedAddresses
+    {
+        get
+        {
+            lock (LearnedAddressesLock)
+            {
+                return learnedAddresses;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Remembers the addresses machines were reached at, so the next connection works without DNS.
+    /// Skips this machine, blank names and unknown addresses. Returns true if anything new was learned.
+    /// </summary>
+    internal static bool LearnAddresses(IEnumerable<(string Name, IPAddress Address)> found)
+    {
+        lock (LearnedAddressesLock)
+        {
+            string learned = learnedAddresses;
+            string saved = Setting.Values.Name2IpIsGpoConfigured ? null : Setting.Values.Name2IP ?? string.Empty;
+            string updated = saved;
+
+            foreach ((string name, IPAddress address) in found)
+            {
+                if (address == null || string.IsNullOrWhiteSpace(name) || PeerAddress.TryParseLiteral(name, out _)
+                    || name.Trim().Equals(Common.MachineName.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                learned = Name2IpMap.SetLearned(learned, name, address);
+                updated = updated == null ? null : Name2IpMap.SetLearned(updated, name, address);
+            }
+
+            bool changed = !learned.Equals(learnedAddresses, StringComparison.Ordinal);
+            learnedAddresses = learned;
+
+            if (updated != null && !updated.Equals(saved, StringComparison.Ordinal))
+            {
+                Logger.Log($"Learned machine addresses:\r\n{learned}");
+                Setting.Values.Name2IP = updated;
+
+                // Name2IP has no instant save of its own.
+                if (!Setting.Values.PauseInstantSaving)
+                {
+                    Setting.Values.SaveSettings();
+                }
+            }
+
+            return changed;
+        }
     }
 
     internal static void SwitchToMachine(string name)
