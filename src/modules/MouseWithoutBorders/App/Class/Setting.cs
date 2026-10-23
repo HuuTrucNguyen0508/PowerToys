@@ -1174,7 +1174,15 @@ namespace MouseWithoutBorders.Class
 
                 lock (_loadingSettingsLock)
                 {
-                    _properties.Name2IP.Value = Name2IpMap.MergeLearned(value, _learnedAddresses);
+                    string updated = Name2IpMap.MergeLearned(value, _learnedAddresses);
+                    if (!string.Equals(updated, _properties.Name2IP.Value, StringComparison.Ordinal))
+                    {
+                        _properties.Name2IP.Value = updated;
+                        if (!PauseInstantSaving)
+                        {
+                            SaveSettings();
+                        }
+                    }
                 }
             }
         }

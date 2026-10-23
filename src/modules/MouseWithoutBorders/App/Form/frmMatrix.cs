@@ -84,6 +84,8 @@ namespace MouseWithoutBorders
                 return;
             }
 
+            SyncName2IpMappings();
+
             string[] st = new string[MachineStuff.MAX_MACHINE];
             for (int i = 0; i < MachineStuff.MAX_MACHINE; i++)
             {
@@ -382,6 +384,27 @@ namespace MouseWithoutBorders
         // Name2IP as last shown in, or taken from, the IP mappings text box.
         private string name2IpShown;
 
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            if (!e.Cancel)
+            {
+                SyncName2IpMappings();
+            }
+        }
+
+        private void SyncName2IpMappings()
+        {
+            if (!textBoxMachineName2IP.Text.Equals(name2IpShown, StringComparison.Ordinal))
+            {
+                Setting.Values.Name2IP = name2IpShown = textBoxMachineName2IP.Text;
+            }
+            else if (!string.Equals(Setting.Values.Name2IP, name2IpShown, StringComparison.Ordinal))
+            {
+                textBoxMachineName2IP.Text = name2IpShown = Setting.Values.Name2IP;
+            }
+        }
+
         private void HelperTimer_Tick(object sender, EventArgs e)
         {
             string keyNotMatchedMachines = string.Empty;
@@ -413,15 +436,7 @@ namespace MouseWithoutBorders
             {
                 comboBoxEasyMouseOption.Text = ((EasyMouseOption)Setting.Values.EasyMouse).ToString();
 
-                // Save the user's edits, and show addresses learned from the network while the window is open.
-                if (!textBoxMachineName2IP.Text.Equals(name2IpShown, StringComparison.Ordinal))
-                {
-                    Setting.Values.Name2IP = name2IpShown = textBoxMachineName2IP.Text;
-                }
-                else if (!string.Equals(Setting.Values.Name2IP, name2IpShown, StringComparison.Ordinal))
-                {
-                    textBoxMachineName2IP.Text = name2IpShown = Setting.Values.Name2IP;
-                }
+                SyncName2IpMappings();
 
                 // 2 times
                 if (helperTimerCounter < 15)
