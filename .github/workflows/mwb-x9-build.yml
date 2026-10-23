@@ -165,6 +165,7 @@ jobs:
           $bin = "out/MWB-X9-$env:MWB_VERSION-x64/bin"
           $junk = @(Get-ChildItem $bin -Recurse -File | Where-Object { $_.Extension -in '.pdb', '.lib', '.exp', '.lastcodeanalysissucceeded' -or $_.Name -eq 'backup_restore_settings.json' })
           if ($junk.Count) { throw "Build junk in package: $($junk.Name -join ', ')" }
+          if (Test-Path "$bin/WinUI3Apps") { throw 'Unrelated WinUI3Apps build outputs are in the package.' }
           foreach ($dll in 'PowerToys.MouseWithoutBorders.dll', 'PowerToys.MouseWithoutBordersService.dll') {
             $bytes = [IO.File]::ReadAllBytes((Resolve-Path "$bin/$dll"))
             $text = [Text.Encoding]::Unicode.GetString($bytes) + [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
@@ -311,6 +312,11 @@ jobs:
             "{0} {1} session {2} owner {3}\{4}: {5}" -f $_.ProcessId, $_.Name, $_.SessionId, $owner.Domain, $owner.User, $_.CommandLine
           }
 
+          & "$pkg\Install-MWBX9.ps1" -NoService -Autostart
+          Assert (-not (Get-Service -Name 'MWBX9.Service' -ErrorAction SilentlyContinue)) 'switching to non-service mode removes the service'
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($startMenu)
+          Assert ($lnk.Arguments -eq '') 'non-service shortcut omits UseService'
+
           $testUser = New-LocalUser -Name 'MWBX9-Test' -NoPassword -Disabled
           $testProfileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($testUser.SID.Value)"
           $testProfile = Join-Path $env:RUNNER_TEMP 'MWB target profile'
@@ -333,6 +339,15 @@ jobs:
           }
           Assert (Test-Path "$testLocal\Microsoft\PowerToys\MWB-X9\settings.json") 'SYSTEM worker writes settings under the full target path with spaces'
 
+          $foreignLink = "$testLocal\Microsoft\PowerToys\MWB-X9\foreign-link"
+          New-Item -ItemType Junction -Path $foreignLink -Target $other | Out-Null
+          $refused = $false
+          try { & "$dir\Uninstall-MWBX9.ps1" -RemoveData } catch { $refused = $true; "Refused as expected: $_" }
+          Assert ($refused -and (Test-Path (Join-Path $other 'keep.txt'))) 'RemoveData refuses to traverse a junction into another folder'
+          [IO.Directory]::Delete($foreignLink)
+          & "$pkg\Install-MWBX9.ps1" -User "$env:COMPUTERNAME\MWBX9-Test"
+          Start-Service -Name 'MWBX9.Service'
+          Start-Sleep -Seconds 20
           & "$dir\Uninstall-MWBX9.ps1" -RemoveData
           & "$pkg\Uninstall-MWBX9.ps1" -RemoveData
 
