@@ -102,7 +102,7 @@ namespace MouseWithoutBorders
                 SecurityCode = Encryption.MyKey;
             }
 
-            MachineStuff.MachineMatrix = new string[MachineStuff.MAX_MACHINE] { ComputerNameField.Text.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim(), string.Empty, string.Empty };
+            MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, ComputerNameField.Text.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim());
 
             string[] machines = MachineStuff.MachineMatrix;
             MachineStuff.MachinePool.Initialize(machines);

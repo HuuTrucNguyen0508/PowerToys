@@ -60,6 +60,11 @@ internal sealed class DATA
     [FieldOffset(sizeof(PackageType) + (3 * sizeof(uint)))]
     internal ClipboardPostAction PostAction;
 
+    // Number of matrix slots the sender has. Only meaningful in Matrix packets, which are always 64-byte packets.
+    // Official builds leave these bytes at 0 and ignore them, so 0 means a 4-slot official sender.
+    [FieldOffset(sizeof(PackageType) + (3 * sizeof(uint)))]
+    internal int MatrixSlotCount;
+
     [FieldOffset(sizeof(PackageType) + (7 * sizeof(uint)))]
     private long machineNameP1;
 

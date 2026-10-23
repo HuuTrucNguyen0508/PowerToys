@@ -4,7 +4,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
 using System.Threading;
@@ -27,8 +26,10 @@ internal static class MachineStuff
 {
     private static readonly Lock McMatrixLock = new();
 
-    internal const byte MAX_MACHINE = 4;
-    private const byte MAX_SOCKET = MAX_MACHINE * 2;
+    internal const byte MAX_MACHINE = 9;
+
+    // Grid width when the matrix is not a single row. Rows = MAX_MACHINE / MATRIX_COLUMNS.
+    internal const byte MATRIX_COLUMNS = 3;
     internal const long HEARTBEAT_TIMEOUT = 1500000; // 30 Mins
     private const int SKIP_PIXELS = 1;
     private const int JUMP_PIXELS = 2;
@@ -284,98 +285,45 @@ internal static class MachineStuff
 
 #endif
 
-    [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity", Justification = "Dotnet port with style preservation")]
-    private static Point MoveRight(int x, int y)
+    // Sets newDesMachineIdEx to the nearest live machine next to the current one in the matrix.
+    // Leaves it unchanged when there is none, so the caller does not switch.
+    private static void SelectNeighbour(MatrixDirection direction)
     {
-        string[] mc = LiveMachineMatrix;
-        if (mc == null)
-        {
-            return Point.Empty;
-        }
-
-        bool oneRow = Setting.Values.MatrixOneRow;
-
         string currentMachine = NameFromID(desMachineID);
         if (currentMachine == null)
         {
-            return Point.Empty;
+            return;
         }
 
-        ID newID;
-        if (oneRow)
+        string[] matrix = MachineMatrix;
+        string[] live = LiveMachineMatrix;
+        int current = Array.FindIndex(matrix, m => currentMachine.Trim().Equals(m?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (current < 0 || live.Length != matrix.Length)
         {
-            bool found = false;
-            for (int i = 0; i < MAX_MACHINE; i++)
-            {
-                if (currentMachine.Trim().Equals(mc[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    for (int j = i; j < MAX_MACHINE - 1; j++)
-                    {
-                        if (mc[j + 1] != null && mc[j + 1].Length > 0)
-                        {
-                            if ((newID = IdFromName(mc[j + 1])) > 0)
-                            {
-                                newDesMachineIdEx = newID;
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!found && Setting.Values.MatrixCircle)
-                    {
-                        for (int j = 0; j < i; j++)
-                        {
-                            if (mc[j] != null && mc[j].Length > 0)
-                            {
-                                if ((newID = IdFromName(mc[j])) > 0)
-                                {
-                                    newDesMachineIdEx = newID;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    break;
-                }
-            }
+            return;
         }
-        else
+
+        int target = GridNavigator.Next(
+            matrix.Length,
+            MatrixLayout.Columns(matrix.Length, Setting.Values.MatrixOneRow, MATRIX_COLUMNS),
+            current,
+            direction,
+            Setting.Values.MatrixCircle,
+            i => !string.IsNullOrEmpty(live[i]) && IdFromName(live[i]) != ID.NONE);
+
+        if (target >= 0)
         {
-            if (currentMachine.Trim().Equals(mc[0], StringComparison.OrdinalIgnoreCase) && (mc[1] != null)
-                && (mc[1].Length > 0))
+            ID newID = IdFromName(live[target]);
+            if (newID != ID.NONE)
             {
-                if ((newID = IdFromName(mc[1])) > 0)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (currentMachine.Trim().Equals(mc[2], StringComparison.OrdinalIgnoreCase) && (mc[3] != null)
-                && (mc[3].Length > 0))
-            {
-                if ((newID = IdFromName(mc[3])) > 0)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[1], StringComparison.OrdinalIgnoreCase) && (mc[0] != null)
-                && (mc[0].Length > 0))
-            {
-                if ((newID = IdFromName(mc[0])) > 0)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[3], StringComparison.OrdinalIgnoreCase) && (mc[2] != null)
-                && (mc[2].Length > 0))
-            {
-                if ((newID = IdFromName(mc[2])) > 0)
-                {
-                    newDesMachineIdEx = newID;
-                }
+                newDesMachineIdEx = newID;
             }
         }
+    }
+
+    private static Point MoveRight(int x, int y)
+    {
+        SelectNeighbour(MatrixDirection.Right);
 
         // THIS LOGIC IS THE SAME FOR Move*(int x, int y) METHODS.
         if (newDesMachineIdEx != desMachineID)
@@ -424,98 +372,9 @@ internal static class MachineStuff
         return Point.Empty;
     }
 
-    [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity", Justification = "Dotnet port with style preservation")]
     private static Point MoveLeft(int x, int y)
     {
-        string[] mc = LiveMachineMatrix;
-        if (mc == null)
-        {
-            return Point.Empty;
-        }
-
-        bool oneRow = Setting.Values.MatrixOneRow;
-
-        string currentMachine = NameFromID(desMachineID);
-        if (currentMachine == null)
-        {
-            return Point.Empty;
-        }
-
-        ID newID;
-        if (oneRow)
-        {
-            bool found = false;
-            for (int i = MAX_MACHINE - 1; i >= 0; i--)
-            {
-                if (currentMachine.Trim().Equals(mc[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    for (int j = i; j > 0; j--)
-                    {
-                        if (mc[j - 1] != null && mc[j - 1].Length > 0)
-                        {
-                            if ((newID = IdFromName(mc[j - 1])) != ID.NONE)
-                            {
-                                newDesMachineIdEx = newID;
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!found && Setting.Values.MatrixCircle)
-                    {
-                        for (int j = MAX_MACHINE - 1; j > i; j--)
-                        {
-                            if (mc[j] != null && mc[j].Length > 0)
-                            {
-                                if ((newID = IdFromName(mc[j])) != ID.NONE)
-                                {
-                                    newDesMachineIdEx = newID;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    break;
-                }
-            }
-        }
-        else
-        {
-            if (currentMachine.Trim().Equals(mc[1], StringComparison.OrdinalIgnoreCase) && (mc[0] != null)
-                && (mc[0].Length > 0))
-            {
-                if ((newID = IdFromName(mc[0])) != ID.NONE)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (currentMachine.Trim().Equals(mc[3], StringComparison.OrdinalIgnoreCase) && (mc[2] != null)
-                && (mc[2].Length > 0))
-            {
-                if ((newID = IdFromName(mc[2])) != ID.NONE)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[0], StringComparison.OrdinalIgnoreCase) && (mc[1] != null)
-                && (mc[1].Length > 0))
-            {
-                if ((newID = IdFromName(mc[1])) != ID.NONE)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-            else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[2], StringComparison.OrdinalIgnoreCase) && (mc[3] != null)
-                && (mc[3].Length > 0))
-            {
-                if ((newID = IdFromName(mc[3])) != ID.NONE)
-                {
-                    newDesMachineIdEx = newID;
-                }
-            }
-        }
+        SelectNeighbour(MatrixDirection.Left);
 
         if (newDesMachineIdEx != desMachineID)
         {
@@ -540,51 +399,7 @@ internal static class MachineStuff
             return Point.Empty;
         }
 
-        string[] mc = LiveMachineMatrix;
-        if (mc == null)
-        {
-            return Point.Empty;
-        }
-
-        string currentMachine = NameFromID(desMachineID);
-        if (currentMachine == null)
-        {
-            return Point.Empty;
-        }
-
-        ID newID;
-        if (currentMachine.Trim().Equals(mc[2], StringComparison.OrdinalIgnoreCase) && (mc[0] != null)
-            && (mc[0].Length > 0))
-        {
-            if ((newID = IdFromName(mc[0])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-        else if (currentMachine.Trim().Equals(mc[3], StringComparison.OrdinalIgnoreCase) && (mc[1] != null)
-            && (mc[1].Length > 0))
-        {
-            if ((newID = IdFromName(mc[1])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-        else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[0], StringComparison.OrdinalIgnoreCase) && (mc[2] != null)
-            && (mc[2].Length > 0))
-        {
-            if ((newID = IdFromName(mc[2])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-        else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[1], StringComparison.OrdinalIgnoreCase) && (mc[3] != null)
-            && (mc[3].Length > 0))
-        {
-            if ((newID = IdFromName(mc[3])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
+        SelectNeighbour(MatrixDirection.Up);
 
         if (newDesMachineIdEx != desMachineID)
         {
@@ -609,52 +424,7 @@ internal static class MachineStuff
             return Point.Empty;
         }
 
-        string[] mc = LiveMachineMatrix;
-        if (mc == null)
-        {
-            return Point.Empty;
-        }
-
-        string currentMachine = NameFromID(desMachineID);
-        if (currentMachine == null)
-        {
-            return Point.Empty;
-        }
-
-        ID newID;
-        if (currentMachine.Trim().Equals(mc[0], StringComparison.OrdinalIgnoreCase) && (mc[2] != null)
-            && (mc[2].Length > 0))
-        {
-            if ((newID = IdFromName(mc[2])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-        else if (currentMachine.Trim().Equals(mc[1], StringComparison.OrdinalIgnoreCase) && (mc[3] != null)
-            && (mc[3].Length > 0))
-        {
-            if ((newID = IdFromName(mc[3])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-
-        if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[2], StringComparison.OrdinalIgnoreCase) && (mc[0] != null)
-            && (mc[0].Length > 0))
-        {
-            if ((newID = IdFromName(mc[0])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
-        else if (Setting.Values.MatrixCircle && currentMachine.Trim().Equals(mc[3], StringComparison.OrdinalIgnoreCase) && (mc[1] != null)
-            && (mc[1].Length > 0))
-        {
-            if ((newID = IdFromName(mc[1])) != ID.NONE)
-            {
-                newDesMachineIdEx = newID;
-            }
-        }
+        SelectNeighbour(MatrixDirection.Down);
 
         if (newDesMachineIdEx != desMachineID)
         {
@@ -745,7 +515,7 @@ internal static class MachineStuff
             else
             {
                 Logger.LogDebug("AddToMachinePool: could not add a new machine: " + name);
-                return "The 5th machine";
+                return "Machine pool is full";
             }
         }
 
@@ -756,20 +526,18 @@ internal static class MachineStuff
         }
 
         // NOTE(yuyoyuppe): automatically active "bidirectional" control between the machines.
-        string[] st = new string[MachineStuff.MAX_MACHINE];
-        Array.Fill(st, string.Empty);
-        var machines = MachineStuff.MachinePool.ListAllMachines();
-        for (int i = 0; i < machines.Count; ++i)
+        // A new machine goes into the first empty slot; the rest of the layout is left as the user arranged it.
+        if (package.Src != ID.NONE && package.Src != ID.ALL && !InMachineMatrix(name))
         {
-            if (machines[i].Id != ID.NONE && machines[i].Id != ID.ALL)
+            string[] matrix = (string[])MachineStuff.MachineMatrix.Clone();
+
+            if (MatrixLayout.PlaceInFirstEmptySlot(matrix, name))
             {
-                st[i] = machines[i].Name;
+                MachineStuff.MachineMatrix = matrix;
+                Common.ReopenSockets(true);
+                MachineStuff.SendMachineMatrix();
             }
         }
-
-        MachineStuff.MachineMatrix = st;
-        Common.ReopenSockets(true);
-        MachineStuff.SendMachineMatrix();
 
         Logger.LogDebug("Machine added: " + name + "/" + package.Src.ToString());
         UpdateClientSockets("AddToMachinePool");
@@ -891,19 +659,15 @@ internal static class MachineStuff
                 if (mcMatrix == null)
                 {
                     string s = Setting.Values.MachineMatrixString;
+                    string[] stored = string.IsNullOrEmpty(s) ? null : s.Split(new char[] { ',' });
 
-                    if (!string.IsNullOrEmpty(s))
-                    {
-                        mcMatrix = s.Split(new char[] { ',' });
+                    // Migrates legacy or mis-sized layouts in memory only. Saving here could deadlock because this
+                    // getter runs under locks; the next MachineMatrix set persists the normalized layout.
+                    mcMatrix = MatrixLayout.Normalize(stored, MAX_MACHINE, !Setting.Values.MatrixOneRow, MATRIX_COLUMNS);
 
-                        if (mcMatrix == null || mcMatrix.Length != MAX_MACHINE)
-                        {
-                            mcMatrix = new string[MAX_MACHINE] { string.Empty, string.Empty, string.Empty, string.Empty };
-                        }
-                    }
-                    else
+                    if (stored != null && !stored.SequenceEqual(mcMatrix))
                     {
-                        mcMatrix = new string[MAX_MACHINE] { string.Empty, string.Empty, string.Empty, string.Empty };
+                        Logger.LogDebug($"MachineMatrix normalized from [{s}] to [{string.Join(",", mcMatrix)}]");
                     }
                 }
 
@@ -938,9 +702,9 @@ internal static class MachineStuff
     {
         get
         {
-            bool twoRow = !Setting.Values.MatrixOneRow;
-            string[] connectedMachines = twoRow ? MachineMatrix : MachineMatrix.Select(m => Common.IsConnectedTo(IdFromName(m)) ? m : string.Empty).ToArray();
-            Logger.LogDebug($"Matrix: {string.Join(",", MachineMatrix)}, Connected: {string.Join(",", connectedMachines)}");
+            string[] matrix = MachineMatrix;
+            string[] connectedMachines = matrix.Select(m => !string.IsNullOrEmpty(m) && Common.IsConnectedTo(IdFromName(m)) ? m : string.Empty).ToArray();
+            Logger.LogDebug($"Matrix: {string.Join(",", matrix)}, Connected: {string.Join(",", connectedMachines)}");
 
             return connectedMachines;
         }
@@ -959,10 +723,12 @@ internal static class MachineStuff
         }
 
         DATA package = new();
+        string[] matrix = MachineMatrix;
 
-        for (int i = 0; i < MachineMatrix.Length; i++)
+        for (int i = 0; i < matrix.Length; i++)
         {
-            package.MachineName = MachineMatrix[i];
+            package.MachineName = matrix[i];
+            package.MatrixSlotCount = matrix.Length;
 
             package.Type = PackageType.Matrix
                 | (Setting.Values.MatrixCircle ? PackageType.MatrixSwapFlag : 0)
@@ -973,37 +739,76 @@ internal static class MachineStuff
 
             Common.SkSend(package, null, false);
 
-            Logger.LogDebug($"matrixIncludedMachine sent: [{i + 1}]:[{MachineMatrix[i]}]");
+            Logger.LogDebug($"matrixIncludedMachine sent: [{i + 1}]/[{matrix.Length}]:[{matrix[i]}]");
         }
     }
+
+    private static readonly Lock StagedMatrixLock = new();
+    private static string[] stagedMatrix;
+    private static long lastIgnoredMatrixLogTime;
 
     internal static void UpdateMachineMatrix(DATA package)
     {
         uint i = (uint)package.Src;
+        int slotCount = package.MatrixSlotCount;
         string matrixIncludedMachine = package.MachineName;
 
-        if (i is > 0 and <= MAX_MACHINE)
+        // Official builds send 4 slots and leave MatrixSlotCount at 0. Applying their layout would overwrite ours.
+        if (slotCount != MAX_MACHINE)
         {
-            Logger.LogDebug($"matrixIncludedMachine: [{i}]:[{matrixIncludedMachine}]");
+            if (Common.GetTick() - lastIgnoredMatrixLogTime > 60000)
+            {
+                lastIgnoredMatrixLogTime = Common.GetTick();
+                Logger.Log($"Ignoring machine Matrix package with {slotCount} slots (0 = official build); this build has {MAX_MACHINE}.");
+            }
 
-            MachineMatrix[i - 1] = matrixIncludedMachine;
+            return;
+        }
+
+        if (i is 0 or > MAX_MACHINE)
+        {
+            Logger.LogDebug("Invalid machine Matrix package!");
+            return;
+        }
+
+        Logger.LogDebug($"matrixIncludedMachine: [{i}]:[{matrixIncludedMachine}]");
+
+        string[] received = null;
+
+        lock (StagedMatrixLock)
+        {
+            if (i == 1)
+            {
+                stagedMatrix = MatrixLayout.CreateEmpty(MAX_MACHINE);
+            }
+
+            if (stagedMatrix == null)
+            {
+                // Joined mid-stream; wait for the next slot 1.
+                return;
+            }
+
+            stagedMatrix[i - 1] = matrixIncludedMachine;
 
             if (i == MAX_MACHINE)
             {
-                Setting.Values.MatrixCircle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
-                Setting.Values.MatrixOneRow = !((package.Type & PackageType.MatrixTwoRowFlag) == PackageType.MatrixTwoRowFlag);
-                MachineMatrix = MachineMatrix; // Save
-
-                InitAndCleanup.ReopenSocketDueToReadError = true;
-
-                UpdateClientSockets("UpdateMachineMatrix");
-
-                Setting.Values.Changed = true;
+                received = stagedMatrix;
+                stagedMatrix = null;
             }
         }
-        else
+
+        if (received != null)
         {
-            Logger.LogDebug("Invalid machine Matrix package!");
+            Setting.Values.MatrixCircle = (package.Type & PackageType.MatrixSwapFlag) == PackageType.MatrixSwapFlag;
+            Setting.Values.MatrixOneRow = !((package.Type & PackageType.MatrixTwoRowFlag) == PackageType.MatrixTwoRowFlag);
+            MachineMatrix = MatrixLayout.Normalize(received, MAX_MACHINE, false, MATRIX_COLUMNS); // Save
+            Logger.LogDebug($"MachineMatrix received: [{string.Join(",", MachineMatrix)}]");
+
+            InitAndCleanup.ReopenSocketDueToReadError = true;
+
+            UpdateClientSockets("UpdateMachineMatrix");
+
+            Setting.Values.Changed = true;
         }
     }
 
@@ -1117,7 +922,7 @@ internal static class MachineStuff
 
     internal static void ClearComputerMatrix()
     {
-        MachineStuff.MachineMatrix = new string[MachineStuff.MAX_MACHINE] { Common.MachineName.Trim(), string.Empty, string.Empty, string.Empty };
+        MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, Common.MachineName.Trim());
         MachineStuff.MachinePool.Initialize(new string[] { Common.MachineName });
         MachineStuff.UpdateMachinePoolStringSetting();
     }

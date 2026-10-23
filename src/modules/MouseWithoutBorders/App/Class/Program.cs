@@ -345,7 +345,7 @@ namespace MouseWithoutBorders.Class
                     MachineStuff.ClearComputerMatrix();
                     Encryption.MyKey = securityKey;
                     Encryption.MagicNumber = Encryption.Get24BitHash(Encryption.MyKey);
-                    MachineStuff.MachineMatrix = new string[MachineStuff.MAX_MACHINE] { pcName.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim(), string.Empty, string.Empty };
+                    MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, pcName.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim());
 
                     string[] machines = MachineStuff.MachineMatrix;
                     MachineStuff.MachinePool.Initialize(machines);

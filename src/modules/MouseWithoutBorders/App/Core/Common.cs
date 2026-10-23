@@ -1215,7 +1215,7 @@ internal static class Common
 
         if (machineCt < 2 && MachineStuff.Settings != null && (MachineStuff.Settings.GetCurrentPage() is SetupPage1 || MachineStuff.Settings.GetCurrentPage() is SetupPage2b))
         {
-            MachineStuff.MachineMatrix = new string[MachineStuff.MAX_MACHINE] { Common.MachineName.Trim(), desMachine, string.Empty, string.Empty };
+            MachineStuff.MachineMatrix = MatrixLayout.Create(MachineStuff.MAX_MACHINE, Common.MachineName.Trim(), desMachine);
             Logger.LogDebug("UpdateSetupMachineMatrix: " + string.Join(",", MachineStuff.MachineMatrix));
 
             Common.DoSomethingInUIThread(
