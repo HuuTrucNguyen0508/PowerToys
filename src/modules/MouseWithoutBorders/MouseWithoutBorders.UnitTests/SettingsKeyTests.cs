@@ -54,7 +54,7 @@ public sealed class SettingsKeyTests
         var click = wizard[wizard.IndexOf("private void LinkButtonClick(", StringComparison.Ordinal)..];
         var validation = click.IndexOf("if (!Encryption.IsKeyValid(key,", StringComparison.Ordinal);
         Assert.IsTrue(validation >= 0);
-        foreach (var mutation in new[] { "Encryption.MyKey = key;", "Setting.Values.MyKey =", "MachineStuff.MachineMatrix =", "MachineStuff.MachinePool.Initialize(", "SendNextPage(" })
+        foreach (var mutation in new[] { "Encryption.MyKey = key;", "Setting.Values.MyKey =", "MachineStuff.StartLayoutWith(", "SendNextPage(" })
         {
             Assert.IsTrue(click.IndexOf(mutation, StringComparison.Ordinal) > validation, mutation);
         }
