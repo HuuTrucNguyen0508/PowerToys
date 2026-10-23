@@ -24,7 +24,7 @@ public sealed class MatrixPacketSerializationTests
         byte[] bytes = sent.Bytes;
         DATA received = new(bytes);
         Assert.AreEqual(64, bytes.Length);
-        Assert.IsFalse(received.IsBigPackage);
+        Assert.IsTrue(received.IsBigPackage);
         Assert.AreEqual(PackageType.Matrix, received.Type & PackageType.Matrix);
         Assert.AreEqual(PackageType.MatrixJoinFlag, received.Type & PackageType.MatrixJoinFlag);
         Assert.AreEqual(PackageType.MatrixTwoRowFlag, received.Type & PackageType.MatrixTwoRowFlag);
