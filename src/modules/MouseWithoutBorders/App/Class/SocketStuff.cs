@@ -732,40 +732,9 @@ namespace MouseWithoutBorders.Class
             }
         }
 
-        private static string GetMachineNameFromSocket(Socket socket)
-        {
-            string stringIP = socket.RemoteEndPoint.ToString();
-            string name = null;
-
-            try
-            {
-                // Remote machine has IP changed, update it.
-                name = Dns.GetHostEntry((socket.RemoteEndPoint as IPEndPoint).Address).HostName;
-            }
-            catch (SocketException e)
-            {
-                Logger.Log($"{nameof(GetMachineNameFromSocket)}: {e.Message}");
-                return stringIP;
-            }
-
-            // Remove the domain part.
-            if (!string.IsNullOrEmpty(name))
-            {
-                int dotPos = name.IndexOf('.');
-
-                if (dotPos > 0)
-                {
-                    Logger.LogDebug("Removing domain part from the full machine name: {0}.", name);
-                    name = name[..dotPos];
-                }
-            }
-
-            return string.IsNullOrEmpty(name) ? stringIP : name;
-        }
-
         private void AddSocket(Socket s)
         {
-            string machineName = GetMachineNameFromSocket(s);
+            string machineName = Common.GetRemoteAddress(s)?.ToString() ?? string.Empty;
             Logger.Log($"New connection from client: [{machineName}].");
             TcpSk tcp = AddTcpSocket(false, s, SocketStatus.Connecting, machineName);
             StartNewTcpServer(tcp, machineName);
@@ -1306,7 +1275,7 @@ namespace MouseWithoutBorders.Class
                 UpdateTcpSockets(currentTcp, SocketStatus.Handshaking);
 
                 strIP = Common.GetRemoteStringIP(currentSocket, true);
-                remoteMachine = string.IsNullOrEmpty(machineName) ? GetMachineNameFromSocket(currentSocket) : machineName;
+                remoteMachine = string.IsNullOrEmpty(machineName) ? strIP : machineName;
 
                 Logger.LogDebug($"MainTCPRoutine: Remote machineName/IP = {remoteMachine}/{strIP}");
             }
