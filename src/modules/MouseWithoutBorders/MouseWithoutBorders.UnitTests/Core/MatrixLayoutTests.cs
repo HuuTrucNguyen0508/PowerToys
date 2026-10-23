@@ -307,11 +307,13 @@ public sealed class MatrixLayoutTests
     }
 
     [TestMethod]
-    public void JoinMergeNeverPropagatesTypedAddresses()
+    public void JoinMergeKeepsLocalPendingAddressesAndNeverImportsRemoteAddresses()
     {
-        Assert.IsTrue(MatrixLayout.TryMergeJoin(["A", "10.0.0.1", string.Empty], ["A", "B", string.Empty], out string[] merged));
-        string[] expected = ["A", "B", string.Empty];
+        Assert.IsTrue(MatrixLayout.TryMergeJoin(["A", "10.0.0.1", string.Empty], ["A", "B", "10.0.0.2"], out string[] merged));
+        string[] expected = ["A", "B", "10.0.0.1"];
         CollectionAssert.AreEqual(expected, merged);
+        string[] advertised = ["A", "B", string.Empty];
+        CollectionAssert.AreEqual(advertised, MatrixLayout.WithoutAddresses(merged));
     }
 
     [TestMethod]

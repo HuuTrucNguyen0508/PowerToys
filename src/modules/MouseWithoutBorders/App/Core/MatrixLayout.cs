@@ -185,8 +185,9 @@ internal static class MatrixLayout
             }
         }
 
+        string[] pendingAddresses = current.Where(name => PeerAddress.TryParseLiteral(name, out _)).ToArray();
         merged = null;
-        if (current.Length != incoming.Length || preferredSlots.Count > current.Length)
+        if (current.Length != incoming.Length || preferredSlots.Count + pendingAddresses.Length > current.Length)
         {
             return false;
         }
@@ -210,8 +211,16 @@ internal static class MatrixLayout
             _ = PlaceInFirstEmptySlot(merged, name);
         }
 
+        foreach (string address in pendingAddresses)
+        {
+            _ = PlaceInFirstEmptySlot(merged, address);
+        }
+
         return true;
     }
+
+    internal static string[] WithoutAddresses(string[] matrix) =>
+        matrix.Select(name => PeerAddress.TryParseLiteral(name, out _) ? string.Empty : name).ToArray();
 
     /// <summary>
     /// Number of columns in the layout: one row of all slots, or a grid <paramref name="gridColumns"/> wide.

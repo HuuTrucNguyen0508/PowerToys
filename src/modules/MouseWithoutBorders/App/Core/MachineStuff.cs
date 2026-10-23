@@ -775,7 +775,7 @@ internal static class MachineStuff
                     | (Setting.Values.MatrixCircle ? PackageType.MatrixSwapFlag : 0)
                     | (Setting.Values.MatrixOneRow ? 0 : PackageType.MatrixTwoRowFlag),
             };
-            string[] matrix = MachineMatrix;
+            string[] matrix = MatrixLayout.WithoutAddresses(MachineMatrix);
 
             for (int i = 0; i < matrix.Length; i++)
             {
@@ -853,7 +853,7 @@ internal static class MachineStuff
                     return;
                 }
 
-                sendMerged = !merged.SequenceEqual(received, StringComparer.OrdinalIgnoreCase);
+                sendMerged = !MatrixLayout.WithoutAddresses(merged).SequenceEqual(received, StringComparer.OrdinalIgnoreCase);
                 received = merged;
             }
 
